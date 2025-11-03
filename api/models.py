@@ -1,16 +1,17 @@
-from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR
 from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
     pass
 
+
 class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True)
+    name = Column(VARCHAR(32), unique=True, nullable=False)
     point_of_contact = Column(String(50))
-    unix_gid = Column(Integer)
+    unix_gid = Column(Integer, unique=True)
     has_groupdir = Column(Boolean, nullable=False, default=True)
 
 
@@ -20,7 +21,7 @@ class Note(Base):
     ticket = Column(String(9))
     note = Column(Text)
     author = Column(String(255))
-    date = Column(TIMESTAMP, nullable=False)
+    date = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
 
 class PIProject(Base):
@@ -41,7 +42,7 @@ class Project(Base):
     access = Column(String(255))
     accounting_group = Column(String(255))
     url = Column(String(255))
-    date = Column(TIMESTAMP, nullable=False)
+    date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     ticket = Column(Integer)
     last_contact = Column(TIMESTAMP)
 
@@ -75,24 +76,24 @@ class User(Base):
 class UserGroup(Base):
     __tablename__ = 'user_groups'
     id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey('groups.id'), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     __table_args__ = (UniqueConstraint('user_id', 'group_id', name='user_groups_distinct'),)
 
 
 class UserNote(Base):
     __tablename__ = 'user_notes'
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer)
-    note_id = Column(Integer, ForeignKey('notes.id'), nullable=False)
-    user_id = Column(Integer)
+    project_id = Column(Integer, ForeignKey('notes.id', ondelete="CASCADE"))
+    note_id = Column(Integer, ForeignKey('notes.id', ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
 
 
 class UserProject(Base):
     __tablename__ = 'user_projects'
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey('projects.id'), nullable=False)
-    user_id = Column(Integer)
+    project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     role = Column(Integer)
     is_primary = Column(Boolean, nullable=False, default=False)
     __table_args__ = (UniqueConstraint('user_id', 'project_id', name='user_projects_distinct'),)
@@ -101,8 +102,8 @@ class UserProject(Base):
 class UserSubmit(Base):
     __tablename__ = 'user_submits'
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    submit_node_id = Column(Integer, ForeignKey('submit_nodes.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+    submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False)
     for_auth_netid = Column(Boolean)
     disk_quota = Column(Integer)
     hpc_diskquota = Column(Integer, nullable=False, default=100)
@@ -111,4 +112,3 @@ class UserSubmit(Base):
     hpc_corelimit = Column(Integer, nullable=False, default=720)
     hpc_fairshare = Column(Integer, nullable=False, default=100)
     __table_args__ = (UniqueConstraint('user_id', 'submit_node_id', name='user_submits_distinct'),)
-

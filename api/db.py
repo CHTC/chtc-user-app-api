@@ -11,10 +11,7 @@ from os import environ
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-
 from dotenv import load_dotenv
-
-import schemas as schemas
 
 load_dotenv()
 
@@ -34,16 +31,11 @@ async def connect_engine(db_url: str) -> AsyncEngine:
 
     engine = create_async_engine(db_url)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(schemas.Base.metadata.create_all)
-
 
 async def dispose_engine():
     global engine
     await engine.dispose()
 
 
-def get_async_session(engine: AsyncEngine, **kwargs) -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(engine, **kwargs)
-
-
+def get_async_session(**kwargs) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, **kwargs)()

@@ -1,9 +1,18 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from pydantic import BaseModel as PydanticBaseModel, EmailStr, AfterValidator, ConfigDict
+from typing import Optional, Annotated
 from datetime import datetime
 
+from api.validators import group_name_validator
+
+class BaseModel(PydanticBaseModel):
+    model_config = ConfigDict(extra='ignore', from_attributes=True)
+
+class Relationship(BaseModel):
+    """Used to post entities to groups by id"""
+    id: int
+
 class GroupBase(BaseModel):
-    name: str
+    name: Annotated[str, AfterValidator(group_name_validator)]
     point_of_contact: Optional[str] = None
     unix_gid: Optional[int] = None
     has_groupdir: Optional[bool] = True
@@ -16,8 +25,6 @@ class GroupUpdate(GroupBase):
 
 class Group(GroupBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class NoteBase(BaseModel):
     ticket: Optional[str] = None
@@ -26,15 +33,13 @@ class NoteBase(BaseModel):
     date: Optional[datetime] = None
 
 class NoteCreate(NoteBase):
-    pass
+    users: list[int] # Notes have to be associated with at least one user
 
 class NoteUpdate(NoteBase):
     pass
 
 class Note(NoteBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class PIProjectBase(BaseModel):
     project_id: Optional[int] = None
@@ -48,8 +53,6 @@ class PIProjectUpdate(PIProjectBase):
 
 class PIProject(PIProjectBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class ProjectBase(BaseModel):
     name: str
@@ -72,8 +75,6 @@ class ProjectUpdate(ProjectBase):
 
 class Project(ProjectBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class SubmitNodeBase(BaseModel):
     name: str
@@ -86,8 +87,6 @@ class SubmitNodeUpdate(SubmitNodeBase):
 
 class SubmitNode(SubmitNodeBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class UserBase(BaseModel):
     username: Optional[str] = None
@@ -114,8 +113,6 @@ class UserUpdate(UserBase):
 
 class User(UserBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class UserGroupBase(BaseModel):
     group_id: int
@@ -129,8 +126,6 @@ class UserGroupUpdate(UserGroupBase):
 
 class UserGroup(UserGroupBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class UserNoteBase(BaseModel):
     project_id: Optional[int] = None
@@ -145,8 +140,6 @@ class UserNoteUpdate(UserNoteBase):
 
 class UserNote(UserNoteBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class UserProjectBase(BaseModel):
     project_id: int
@@ -162,8 +155,6 @@ class UserProjectUpdate(UserProjectBase):
 
 class UserProject(UserProjectBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class UserSubmitBase(BaseModel):
     user_id: int
@@ -184,9 +175,8 @@ class UserSubmitUpdate(UserSubmitBase):
 
 class UserSubmit(UserSubmitBase):
     id: int
-    class Config:
-        orm_mode = True
 
 class Login(BaseModel):
     username: str
     password: str
+
