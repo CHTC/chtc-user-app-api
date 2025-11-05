@@ -2,7 +2,7 @@ import random
 import base64
 import os
 
-from api.tests.main import basic_auth_client as client, admin_user
+from api.tests.main import basic_auth_client as client, api_client as unauthed_client, admin_user
 
 group_data_f = lambda: {
     "name": f"test-group-{random.randint(0, 10000000)}",
@@ -12,6 +12,19 @@ group_data_f = lambda: {
 }
 
 class TestGroups:
+
+    def test_needs_auth(self, unauthed_client):
+        """Test that authentication is required to access group endpoints"""
+
+        response = unauthed_client.get("/groups")
+        assert response.status_code == 403, f"Getting groups without authentication should return a 401 status code. Got {response.content} instead."
+
+        group_data = group_data_f()
+        response = unauthed_client.post(
+            "/groups",
+            json=group_data,
+        )
+        assert response.status_code == 403, f"Adding a group without authentication should return a 401 status code. Got {response.content} instead."
 
     def test_add_group(self, client):
         """Test adding a group to the database"""
@@ -23,14 +36,14 @@ class TestGroups:
             json=group_data,
         )
 
-        assert response.status_code == 201, "Adding a group should return a 200 status code"
+        assert response.status_code == 201, f"Adding a group should return a 200 status code. Got {response.content} instead."
 
         data = response.json()
 
-        assert data['name'] == group_data['name'], "The returned group name does not match the input"
-        assert data['point_of_contact'] == group_data['point_of_contact'], "The returned point_of_contact does not match the input"
-        assert data['unix_gid'] == group_data['unix_gid'], "The returned unix_gid does not match the input"
-        assert data['has_groupdir'] == group_data['has_groupdir'], "The returned has_groupdir does not match the input"
+        assert data['name'] == group_data['name'], f"The returned group name does not match the input. Got {response.content} instead."
+        assert data['point_of_contact'] == group_data['point_of_contact'], f"The returned point_of_contact does not match the input. Got {response.content} instead."
+        assert data['unix_gid'] == group_data['unix_gid'], f"The returned unix_gid does not match the input. Got {response.content} instead."
+        assert data['has_groupdir'] == group_data['has_groupdir'], f"The returned has_groupdir does not match the input. Got {response.content} instead."
 
     def test_add_invalid_group_name_spaces(self, client):
         """Test adding a group with an invalid name"""
@@ -47,7 +60,7 @@ class TestGroups:
             json=new_group_data,
         )
 
-        assert response.status_code == 422, "Adding a group with an invalid name should return a 400 status code"
+        assert response.status_code == 422, f"Adding a group with an invalid name should return a 400 status code. Got {response.content} instead."
 
     def test_add_invalid_group_name_special_chars(self, client):
         """Test adding a group with an invalid name"""
@@ -64,7 +77,7 @@ class TestGroups:
             json=new_group_data,
         )
 
-        assert response.status_code == 422, "Adding a group with an invalid name should return a 400 status code"
+        assert response.status_code == 422, f"Adding a group with an invalid name should return a 400 status code. Got {response.content} instead."
 
     def test_add_invalid_group_name_too_long(self, client):
         """Test adding a group with an invalid name"""
@@ -81,7 +94,7 @@ class TestGroups:
             json=new_group_data,
         )
 
-        assert response.status_code == 422, "Adding a group with an invalid name should return a 400 status code"
+        assert response.status_code == 422, f"Adding a group with an invalid name should return a 400 status code. Got {response.content} instead."
 
     def test_add_duplicate_gid(self, client):
         """Test adding a group with a duplicate unix_gid"""
@@ -104,7 +117,7 @@ class TestGroups:
             json=new_group_data,
         )
 
-        assert response.status_code == 400, "Adding a group with a duplicate unix_gid should return a 400 status code"
+        assert response.status_code == 400, f"Adding a group with a duplicate unix_gid should return a 400 status code. Got {response.content} instead."
 
     def test_add_colliding_uid_gid(self, client):
         """Test adding a group with a colliding unix_gid with an existing user"""
@@ -124,7 +137,7 @@ class TestGroups:
             json=new_group_data,
         )
 
-        assert response.status_code == 400, "Adding a group with a colliding unix_gid with an existing user should return a 400 status code"
+        assert response.status_code == 400, f"Adding a group with a colliding unix_gid with an existing user should return a 400 status code. Got {response.content} instead."
 
     def test_automatic_allocation_of_gid(self, client):
         """Test adding a group without specifying a unix_gid to check automatic allocation"""
@@ -143,8 +156,8 @@ class TestGroups:
 
         data = response.json()
 
-        assert 'unix_gid' in data, "The returned group should have an automatically allocated unix_gid"
-        assert isinstance(data['unix_gid'], int), "The automatically allocated unix_gid should be an integer"
+        assert 'unix_gid' in data, f"The returned group should have an automatically allocated unix_gid. Got {response.content} instead."
+        assert isinstance(data['unix_gid'], int), f"The automatically allocated unix_gid should be an integer. Got {response.content} instead."
 
     def test_update_groups_with_bad_data(self, client):
         group_response = client.get(
@@ -164,7 +177,7 @@ class TestGroups:
             json=new_group_data,
         )
 
-        assert response.status_code == 400, "Updating a group with a out of bounds unix_gid should return a 400 status code"
+        assert response.status_code == 400, f"Updating a group with a out of bounds unix_gid should return a 400 status code. Got {response.content} instead."
 
     def test_add_delete_user_to_group(self, client, admin_user):
         """Test adding and deleting a user to/from a group"""
@@ -188,13 +201,13 @@ class TestGroups:
                 "id": user_id
             }
         )
-        assert response.status_code == 200, "Adding a user to a group should return a 200 status code"
+        assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
 
         # Now, delete the user from the group
         response = client.delete(
             f"/groups/{group_id}/users/{user_id}"
         )
-        assert response.status_code == 204, "Deleting a user from a group should return a 204 status code"
+        assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
 
 
     def test_get_group_users(self, client):
@@ -219,18 +232,18 @@ class TestGroups:
                 "id": user_id
             }
         )
-        assert response.status_code == 200, "Adding a user to a group should return a 200 status code"
+        assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
 
         response = client.get(
             f"/groups/{group_id}/users"
         )
-        assert response.status_code == 200, "Getting users for a group should return a 200 status code"
+        assert response.status_code == 200, f"Getting users for a group should return a 200 status code. Got {response.content} instead."
 
         # Clean up by removing the user from the group, not essential for the test
         response = client.delete(
             f"/groups/{group_id}/users/{user_id}"
         )
-        assert response.status_code == 204, "Deleting a user from a group should return a 204 status code"
+        assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
 
 
     def test_remove_nonexistent_user_from_group(self, client):
@@ -259,7 +272,7 @@ class TestGroups:
             json=group_data,
         )
 
-        assert response.status_code == 201, "Adding a group should return a 200 status code"
+        assert response.status_code == 201, f"Adding a group should return a 200 status code. Got {response.content} instead"
 
         data = response.json()
         group_id = data['id']

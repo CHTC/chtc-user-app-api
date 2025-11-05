@@ -56,6 +56,38 @@ FOR EACH ROW EXECUTE FUNCTION assign_lowest_unix_gid();
 
 -- PROJECTS TABLE MODIFICATIONS --
 
+-- Update ints to enums --
+
+-- 1. Create the enums
+CREATE TYPE role_enum AS ENUM ('MEMBER', 'PI');
+CREATE TYPE position_enum AS ENUM ('SELECT', 'FACULTY', 'STAFF', 'POSTDOC', 'GRAD_STUDENT', 'UNDERGRADUATE', 'OTHER');
+
+-- 2. Convert user_projects.role from int to role_enum
+ALTER TABLE user_projects
+    ALTER COLUMN role DROP DEFAULT,
+    ALTER COLUMN role TYPE role_enum USING (
+        CASE role
+            WHEN 1 THEN 'MEMBER'
+            WHEN 2 THEN 'PI'
+        END::role_enum
+    );
+
+-- 3. Convert users.position from int to position_enum
+ALTER TABLE users
+    ALTER COLUMN position DROP DEFAULT,
+    ALTER COLUMN position TYPE position_enum USING (
+        CASE position
+            WHEN 1 THEN 'SELECT'
+            WHEN 2 THEN 'FACULTY'
+            WHEN 3 THEN 'STAFF'
+            WHEN 4 THEN 'POSTDOC'
+            WHEN 5 THEN 'GRAD_STUDENT'
+            WHEN 6 THEN 'UNDERGRADUATE'
+            WHEN 7 THEN 'OTHER'
+        END::position_enum
+    );
+
+
 -- Trigger function to ensure users added to a note are associated with the project
 CREATE OR REPLACE FUNCTION check_user_in_project_for_note()
 RETURNS TRIGGER AS $$
@@ -72,3 +104,52 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_check_user_in_project_for_note
 BEFORE INSERT OR UPDATE ON user_notes
 FOR EACH ROW EXECUTE FUNCTION check_user_in_project_for_note();
+
+
+-- USERS TABLE MODIFICATIONS --
+
+-- Add constraint: username or netid must not both be null
+ALTER TABLE users
+    ADD CONSTRAINT chk_username_or_netid_not_null
+    CHECK (username IS NOT NULL OR netid IS NOT NULL);
+
+-- Add constraint: if username is not null, password must not be null
+ALTER TABLE users
+    ADD CONSTRAINT chk_password_if_username_not_null
+    CHECK (username IS NULL OR password IS NOT NULL);
+
+-- Remove the invalid generated column if present
+ALTER TABLE users DROP COLUMN IF EXISTS is_pi;
+
+-- Create a view with just PIs and their projects
+DROP TABLE IF EXISTS pi_projects;
+CREATE OR REPLACE VIEW pi_projects AS
+SELECT
+    u.id AS user_id,
+    u.username,
+    u.name,
+    p.id AS project_id,
+    p.name AS project_name
+FROM users u
+JOIN user_projects up ON up.user_id = u.id
+JOIN projects p ON p.id = up.project_id
+WHERE up.role = 'PI';
+
+
+-- USER PROJECTS VIEW --
+
+CREATE OR REPLACE VIEW joined_projects AS
+    SELECT
+        up.user_id,
+        u.username,
+        u.email1,
+        u.phone1,
+        u.netid,
+        u.name AS user_name,
+        up.project_id,
+        p.name AS project_name,
+        up.role,
+        ( SELECT n.ticket FROM notes n LEFT JOIN user_notes un ON n.id = un.note_id WHERE un.user_id = up.user_id AND un.project_id = up.project_id ORDER BY n.id DESC LIMIT 1 ) AS last_note_ticket
+    FROM user_projects up
+    JOIN users u ON up.user_id = u.id
+    JOIN projects p ON up.project_id = p.id;

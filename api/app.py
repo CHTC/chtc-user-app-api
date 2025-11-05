@@ -7,6 +7,7 @@ import api.routes.security
 import api.routes.groups
 import api.routes.user
 import api.routes.projects
+import api.routes.pi_projects
 from api.db import (
     connect_engine,
     dispose_engine
@@ -45,6 +46,7 @@ app.include_router(api.routes.security.router)
 app.include_router(api.routes.groups.router)
 app.include_router(api.routes.user.router)
 app.include_router(api.routes.projects.router)
+app.include_router(api.routes.pi_projects.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, headers=[("Access-Control-Expose-Headers", "X-Total-Count")])

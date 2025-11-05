@@ -1,8 +1,9 @@
-from pydantic import BaseModel as PydanticBaseModel, EmailStr, AfterValidator, ConfigDict
+from pydantic import BaseModel as PydanticBaseModel, EmailStr, AfterValidator, ConfigDict, HttpUrl, field_serializer
 from typing import Optional, Annotated
 from datetime import datetime
 
-from api.validators import group_name_validator
+from api.validators import group_name_validator, note_ticket_validator, user_password_validator, user_name_validator
+from api.models import RoleEnum, PositionEnum
 
 class BaseModel(PydanticBaseModel):
     model_config = ConfigDict(extra='ignore', from_attributes=True)
@@ -27,7 +28,7 @@ class Group(GroupBase):
     id: int
 
 class NoteBase(BaseModel):
-    ticket: Optional[str] = None
+    ticket: Annotated[Optional[str], AfterValidator(note_ticket_validator)] = None
     note: Optional[str] = None
     author: Optional[str] = None
     date: Optional[datetime] = None
@@ -40,6 +41,7 @@ class NoteUpdate(NoteBase):
 
 class Note(NoteBase):
     id: int
+    users: list['User'] = []
 
 class PIProjectBase(BaseModel):
     project_id: Optional[int] = None
@@ -61,11 +63,15 @@ class ProjectBase(BaseModel):
     staff2: Optional[str] = None
     status: Optional[str] = None
     access: Optional[str] = None
-    accounting_group: Optional[str] = None
-    url: Optional[str] = None
+    accounting_group: str = None
+    url: Optional[HttpUrl] = None
     date: Optional[datetime] = None
     ticket: Optional[int] = None
     last_contact: Optional[datetime] = None
+
+    @field_serializer('url')
+    def serialize_url(self, url):
+        return str(url) if url is not None else None
 
 class ProjectCreate(ProjectBase):
     pass
@@ -90,8 +96,7 @@ class SubmitNode(SubmitNodeBase):
 
 class UserBase(BaseModel):
     username: Optional[str] = None
-    name: Optional[str] = None
-    password: Optional[str] = None
+    name: Annotated[Optional[str], AfterValidator(user_name_validator)] = None
     email1: Optional[EmailStr] = None
     email2: Optional[EmailStr] = None
     netid: Optional[str] = None
@@ -103,13 +108,24 @@ class UserBase(BaseModel):
     auth_username: Optional[bool] = None
     date: Optional[datetime] = None
     unix_uid: Optional[int] = None
-    position: Optional[bool] = None
+    position: Optional[PositionEnum] = None
+
+    @field_serializer('position')
+    def serialize_position(self, position: PositionEnum) -> str:
+        return position.name if position is not None else None
 
 class UserCreate(UserBase):
-    pass
+    email1: EmailStr
+    password: Annotated[Optional[str], AfterValidator(user_password_validator)] = None
+    primary_project_id: int
+    primary_project_role: RoleEnum
+
+class UserCreateIntermediate(UserBase):
+    """Used for the intermediate step when creating a new user, after pulling out project data"""
+    password: Annotated[Optional[str], AfterValidator(user_password_validator)] = None
 
 class UserUpdate(UserBase):
-    pass
+    password: Annotated[Optional[str], AfterValidator(user_password_validator)] = None
 
 class User(UserBase):
     id: int
@@ -142,10 +158,14 @@ class UserNote(UserNoteBase):
     id: int
 
 class UserProjectBase(BaseModel):
-    project_id: int
+    project_id: Optional[int] = None
     user_id: Optional[int] = None
-    role: Optional[int] = None
+    role: Optional['RoleEnum'] = None
     is_primary: Optional[bool] = False
+
+    @field_serializer('role')
+    def serialize_role(self, role: RoleEnum) -> str:
+        return role.name if role is not None else None
 
 class UserProjectCreate(UserProjectBase):
     pass
@@ -180,3 +200,21 @@ class Login(BaseModel):
     username: str
     password: str
 
+class PiProjectView(BaseModel):
+    user_id: int
+    username: str
+    name: str
+    project_id: int
+    project_name: str
+
+class JoinedProjectView(BaseModel):
+    user_id: int
+    username: str
+    email1: str
+    phone1: str
+    netid: str
+    user_name: str
+    project_id: int
+    project_name: str
+    role: RoleEnum
+    last_note_ticket: str | None

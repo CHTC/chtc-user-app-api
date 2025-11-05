@@ -5,6 +5,7 @@ from sqlalchemy.orm import DeclarativeBase
 from starlette.responses import Response
 from sqlalchemy import select, func
 from sqlalchemy.sql.selectable import Select
+from sqlalchemy.engine import Row
 
 from api.query_parser import QueryParser
 
@@ -39,19 +40,19 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
         select_stmt = select_stmt.order_by(*query_parser.get_order_by_columns())
 
     result = await session.execute(select_stmt)
-    groups = result.fetchall()
+    groups = result.unique().fetchall()
     num_groups = await session.execute(
         select(func.count()).select_from(select_stmt.subquery())
     )
     response.headers["X-Total-Count"] = str(num_groups.scalar())
-    return [response_schema.model_validate(group) for group in groups]
+
+    # Depending on the select statement, if you use columns you can return directly, if you use models you need to extract from Row
+    return [x[0] for x in groups]
 
 
 async def list_endpoint(session, model: type[DeclarativeBase], response_schema: type[BaseModel], response: Response, filter_query_params, page: int = 0, page_size: int = 100) -> list[BaseModel]:
     """Generic list endpoint generator"""
-
-    query_parser = QueryParser(columns=model.__table__.c, query_params=filter_query_params)
-    return await list_select_stmt(select_stmt=select(*query_parser.get_select_columns()), model=model, response_schema=response_schema, response=response, filter_query_params=filter_query_params, page=page, page_size=page_size, session=session)
+    return await list_select_stmt(select_stmt=select(model), model=model, response_schema=response_schema, response=response, filter_query_params=filter_query_params, page=page, page_size=page_size, session=session)
 
 
 @with_db_error_handling
@@ -62,7 +63,7 @@ async def get_one_endpoint(session, model: type[DeclarativeBase], response_schem
     result = await session.scalar(select_stmt)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Item not found")
-    return response_schema.model_validate(result)
+    return result
 
 @with_db_error_handling
 async def create_one_endpoint(session, model: type[DeclarativeBase], response_schema: type[BaseModel], item: BaseModel) -> BaseModel:
@@ -72,7 +73,7 @@ async def create_one_endpoint(session, model: type[DeclarativeBase], response_sc
     session.add(db_item)
     await session.flush()  # db_item.id is now available
     await session.refresh(db_item)
-    return response_schema.model_validate(db_item)
+    return db_item
 
 @with_db_error_handling
 async def update_one_endpoint(session, model: type[DeclarativeBase], response_schema: type[BaseModel], id: str, item: BaseModel) -> BaseModel:
@@ -86,10 +87,10 @@ async def update_one_endpoint(session, model: type[DeclarativeBase], response_sc
         setattr(db_item, key, value)
     await session.flush()
     await session.refresh(db_item)
-    return response_schema.model_validate(db_item)
+    return db_item
 
 @with_db_error_handling
-async def delete_one_endpoint(session, model: type[DeclarativeBase], id: str) -> None:
+async def delete_one_endpoint(session, model: type[DeclarativeBase], id: int) -> None:
     """Generic delete one endpoint generator"""
 
     select_stmt = select(model).where(model.id == id)
@@ -98,5 +99,3 @@ async def delete_one_endpoint(session, model: type[DeclarativeBase], id: str) ->
         raise HTTPException(status_code=404, detail=f"Item not found")
     await session.delete(db_item)
     await session.flush()
-
-

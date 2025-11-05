@@ -13,7 +13,7 @@ from sqlalchemy.future import select
 
 from api.schemas import Login
 from api.models import User
-from api.db import get_async_session, get_engine
+from api.db import get_async_session, get_engine, session_generator
 
 http_bearer = HTTPBearer(auto_error=False)
 http_basic = HTTPBasic(auto_error=False)
@@ -23,6 +23,7 @@ class TokenData(BaseModel):
     is_admin: bool
 
 router = APIRouter(
+    tags=["Security"],
     responses={
         404: {
             "description": "Not found"
@@ -62,23 +63,22 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
     return token_data
 
 
-async def get_user_from_basic_auth(credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)]):
+async def get_user_from_basic_auth(credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)], session=Depends(session_generator)) -> User | None:
     """Get the current user from basic auth header"""
 
     if credentials is None:
         return None
 
-    async with get_async_session() as session:
-        result = await session.execute(select(User).where(User.username == credentials.username))
-        user = result.scalar_one_or_none()
+    result = await session.execute(select(User).where(User.username == credentials.username))
+    user = result.unique().scalar_one_or_none()
 
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        # Check the password matches
-        password_is_valid = bcrypt.checkpw(credentials.password.encode('utf-8'), user.password.encode('utf-8'))
+    # Check the password matches
+    password_is_valid = bcrypt.checkpw(credentials.password.encode('utf-8'), user.password.encode('utf-8'))
 
-        return user if password_is_valid else None
+    return user if password_is_valid else None
 
 
 
@@ -149,34 +149,34 @@ async def csrf_middleware(request: Request):
 
 
 @router.post("/login")
-async def login_user(response: Response, login: Login):
-    async with get_async_session() as session:
-        result = await session.execute(select(User).where(User.username == login.username))
-        user = result.scalars().first()
+async def login_user(response: Response, login: Login, session=Depends(session_generator)):
 
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
+    result = await session.execute(select(User).where(User.username == login.username))
+    user = result.scalars().first()
 
-        # Check the password matches
-        password_is_valid = bcrypt.checkpw(login.password.encode('utf-8'), user.password.encode('utf-8'))
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        if password_is_valid:
-            session_id = str(uuid.uuid4())
-            response.set_cookie(
-                "login_token",
-                f"Bearer {create_token(username=user.username, is_admin=user.is_admin, session_id=session_id)}",
-                httponly=True,
-                samesite="strict"
-            )
-            response.set_cookie(
-                "csrf_token",
-                create_token(session_id=session_id, random_value=str(uuid.uuid4())),
-                httponly=False,
-                samesite="strict"
-            )
-            return {"message": "Login successful"}
-        else:
-            raise HTTPException(status_code=401, detail="Invalid password")
+    # Check the password matches
+    password_is_valid = bcrypt.checkpw(login.password.encode('utf-8'), user.password.encode('utf-8'))
+
+    if password_is_valid:
+        session_id = str(uuid.uuid4())
+        response.set_cookie(
+            "login_token",
+            f"Bearer {create_token(username=user.username, is_admin=user.is_admin, session_id=session_id)}",
+            httponly=True,
+            samesite="strict"
+        )
+        response.set_cookie(
+            "csrf_token",
+            create_token(session_id=session_id, random_value=str(uuid.uuid4())),
+            httponly=False,
+            samesite="strict"
+        )
+        return {"message": "Login successful"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid password")
 
 
 @router.post("/logout")

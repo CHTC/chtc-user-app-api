@@ -7,9 +7,11 @@
 #
 import datetime
 from os import environ
+from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from fastapi import Depends
 
 from dotenv import load_dotenv
 
@@ -37,5 +39,10 @@ async def dispose_engine():
     await engine.dispose()
 
 
-def get_async_session(**kwargs) -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(engine, **kwargs)()
+def get_async_session() -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine)
+
+async def session_generator(async_session_maker=Depends(get_async_session)) -> AsyncGenerator[AsyncSession, None]:
+    async with async_session_maker() as session:
+        async with session.begin():
+            yield session

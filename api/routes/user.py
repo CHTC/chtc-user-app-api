@@ -2,14 +2,17 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from starlette.responses import Response
 
-from api.db import get_async_session
+from api.db import session_generator
 import api.models as m
 import api.schemas as s
 from api.query_parser import get_filter_query_params
-from api.util import list_endpoint
+from api.routes.security import is_admin
+from api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, list_select_stmt
 
 router = APIRouter(
     prefix="/users",
+    tags=["User"],
+    dependencies=[Depends(is_admin)],
     responses={
         404: {
             "description": "Not found"
@@ -18,61 +21,40 @@ router = APIRouter(
 )
 
 @router.get("")
-async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params)) -> list[s.User]:
-    return await list_endpoint(m.User, s.User, response, filter_query_params, page, page_size)
+async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[s.User]:
+    return await list_endpoint(session, m.User, s.User, response, filter_query_params, page, page_size)
 
 
-# @router.get("/{user_id}/groups")
-# async def get_user_groups(user_id: int) -> list[s.Group]:
-#     """Get groups for a user"""
-#
-#     async with get_async_session() as session:
-#         result = await session.execute(
-#             select(m.Group)
-#             .join(m.UserGroup, m.Group.id == m.UserGroup.group_id)
-#             .where(m.UserGroup.user_id == user_id)
-#         )
-#         groups = result.scalars().all()
-#         return [s.Group.model_validate(group) for group in groups]
-#
-#
-# @router.get("/{user_id}/projects")
-# async def get_user_projects(user_id: int):
-#     """Get a specific project for a user"""
-#
-#     async with get_async_session() as session:
-#         result = await session.execute(
-#             select(m.Project)
-#             .join(m.UserProject, m.Project.id == m.UserProject.project_id)
-#             .where(m.UserProject.user_id == user_id)
-#         )
-#         projects = result.scalars().all()
-#         return [s.Project.model_validate(project) for project in projects]
-#
-#
-# @router.get("/{user_id}/notes")
-# async def get_user_notes(user_id: int):
-#     """Get notes for a user"""
-#
-#     async with get_async_session() as session:
-#         result = await session.execute(
-#             select(m.Note)
-#             .join(m.UserNote, m.Note.id == m.UserNote.note_id)
-#             .where(m.UserNote.user_id == user_id)
-#         )
-#         notes = result.scalars().all()
-#         return [s.Note.model_validate(note) for note in notes]
-#
-#
-# @router.get("/{user_id}/submit_nodes")
-# async def get_user_submit_nodes(user_id: int):
-#     """Get submit nodes for a user"""
-#
-#     async with get_async_session() as session:
-#         result = await session.execute(
-#             select(m.SubmitNode)
-#             .join(m.UserSubmit, m.SubmitNode.id == m.UserSubmit.submit_node_id)
-#             .where(m.UserSubmit.user_id == user_id)
-#         )
-#         submit_nodes = result.scalars().all()
-#         return [s.SubmitNode.model_validate(submit_node) for submit_node in submit_nodes]
+@router.delete("/{user_id}", status_code=204)
+async def delete_user(user_id: int, session=Depends(session_generator)) -> None:
+    await delete_one_endpoint(session, m.User, user_id)
+
+
+@router.get("/{user_id}")
+async def get_user(user_id: int, session=Depends(session_generator)) -> s.User:
+    return await get_one_endpoint(session, m.User, s.User, user_id)
+
+
+@router.post("", status_code=201)
+async def create_user(user: s.UserCreate, session=Depends(session_generator)) -> s.User:
+    user_only = s.UserCreateIntermediate(**user.model_dump())
+
+    # Create the user
+    created_user = await create_one_endpoint(session, m.User, s.User, user_only)
+    await session.flush()
+
+    # Create the project association
+    user_project_schema = s.UserProjectCreate(project_id=user.primary_project_id, role=user.primary_project_role, is_primary=True, user_id=created_user.id)
+    user_project_model = m.UserProject(**user_project_schema.model_dump())
+    session.add(user_project_model)
+
+    return created_user
+
+@router.get("/{user_id}/projects")
+async def get_user_projects(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[s.JoinedProjectView]:
+    """Get projects associated with a user"""
+
+    filter_query_params.append(('user_id', f"eq.{user_id}"))
+    return await list_endpoint(session, m.JoinedProjectView, s.JoinedProjectView, response, filter_query_params, page, page_size)
+
+
