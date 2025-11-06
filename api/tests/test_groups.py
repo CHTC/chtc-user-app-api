@@ -26,6 +26,17 @@ class TestGroups:
         )
         assert response.status_code == 403, f"Adding a group without authentication should return a 401 status code. Got {response.content} instead."
 
+    def test_get_groups(self, client):
+        """Test getting groups from the database"""
+
+        response = client.get("/groups")
+
+        assert response.status_code == 200, f"Getting groups should return a 200 status code. Got {response.content} instead."
+
+        data = response.json()
+
+        assert isinstance(data, list), f"Getting groups should return a list. Got {response.content} instead."
+
     def test_add_group(self, client):
         """Test adding a group to the database"""
 
@@ -214,13 +225,13 @@ class TestGroups:
         """Test getting users associated with a group"""
 
         user_response = client.get(
-            "/users?page_size=1"
+            "/users?page_size=1000"
         )
         user = user_response.json()[0]
         user_id = user.pop('id')
 
         group_response = client.get(
-            "/groups?page_size=1"
+            "/groups?page_size=1000"
         )
         group = group_response.json()[0]
         group_id = group.pop('id')

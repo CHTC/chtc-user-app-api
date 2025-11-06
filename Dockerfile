@@ -10,6 +10,4 @@ RUN pip install -r requirements.txt
 
 COPY api ./api
 
-WORKDIR /app/api
-
-CMD ["python", "app.py"]
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0"]

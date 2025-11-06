@@ -12,6 +12,17 @@ from api.tests.main import basic_auth_client as client, filled_out_project, admi
 
 class TestProjects:
 
+    def test_get_projects(self, client):
+        """Test getting projects from the database"""
+
+        response = client.get("/projects")
+
+        assert response.status_code == 200, "Getting projects should return a 200 status code"
+
+        data = response.json()
+
+        assert isinstance(data, list), "The returned data should be a list of projects"
+
     def test_add_note(self, client, filled_out_project):
         """Test adding a note to the database"""
 

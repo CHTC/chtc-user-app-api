@@ -22,7 +22,8 @@ router = APIRouter(
 
 @router.get("")
 async def get_projects(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[s.Project]:
-    return await list_endpoint(session, m.Project, s.Project, response, filter_query_params, page, page_size)
+    x = await list_endpoint(session, m.Project, s.Project, response, filter_query_params, page, page_size)
+    return x
 
 
 @router.delete("/{project_id}", status_code=204)
