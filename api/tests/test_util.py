@@ -39,6 +39,14 @@ class TestListing:
         total_count_subset = response_subset.headers.get("X-Total-Count")
         assert total_count_subset == total_count, "X-Total-Count should be the same regardless of page size"
 
+        response = client.get("/groups?page_size=43&point_of_contact=eq.ckoch5")
+        total_count_filtered = response.headers.get("X-Total-Count")
+
+        assert total_count_filtered is not None, "X-Total-Count header is missing for filtered request"
+        assert int(total_count_filtered) <= int(total_count), "X-Total-Count for filtered request should be less than or equal to unfiltered"
+
+
+
     def test_listing_with_pagination(self, client):
         """Test getting object lists from the database with pagination parameters"""
 
