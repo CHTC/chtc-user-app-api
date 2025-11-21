@@ -30,7 +30,7 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
 
     query_parser = QueryParser(columns=model.__table__.c, query_params=filter_query_params)
 
-    select_stmt = select_stmt \
+    paginated_select_stmt = select_stmt \
         .limit(page_size) \
         .offset(page_size * page) \
         .where(query_parser.where_expressions())
@@ -39,15 +39,17 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
             query_parser.get_group_by_column() is None:
         select_stmt = select_stmt.order_by(*query_parser.get_order_by_columns())
 
-    result = await session.execute(select_stmt)
-    groups = result.unique().fetchall()
-    num_groups = await session.execute(
-        select(func.count()).select_from(select_stmt.subquery())
+    result = await session.execute(paginated_select_stmt)
+    results = result.unique().fetchall()
+
+    # Get the total count for pagination
+    num_results_total = await session.execute(
+        select(func.count()).select_from(select_stmt.where(query_parser.where_expressions()).subquery())
     )
-    response.headers["X-Total-Count"] = str(num_groups.scalar())
+    response.headers["X-Total-Count"] = str(num_results_total.scalar())
 
     # Depending on the select statement, if you use columns you can return directly, if you use models you need to extract from Row
-    return [x[0] for x in groups]
+    return [x[0] for x in results]
 
 
 async def list_endpoint(session, model: type[DeclarativeBase], response_schema: type[BaseModel], response: Response, filter_query_params, page: int = 0, page_size: int = 100) -> list[BaseModel]:

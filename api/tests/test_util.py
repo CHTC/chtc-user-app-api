@@ -18,6 +18,27 @@ class TestListing:
         assert isinstance(data, list)
         assert len(data) > 0
 
+    def test_listing_total_count(self, client):
+        """Test getting object lists from the database with total count parameter"""
+
+        response = client.get("/groups?page_size=9999999")
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert isinstance(data, list)
+        assert len(data) > 0
+
+        total_count = response.headers.get("X-Total-Count")
+
+        assert total_count is not None, "X-Total-Count header is missing"
+        assert int(total_count) == len(data), "X-Total-Count is equal to the number of returned items"
+
+        response_subset = client.get("/groups?page_size=2")
+        total_count_subset = response_subset.headers.get("X-Total-Count")
+        assert total_count_subset == total_count, "X-Total-Count should be the same regardless of page size"
+
     def test_listing_with_pagination(self, client):
         """Test getting object lists from the database with pagination parameters"""
 
@@ -25,6 +46,8 @@ class TestListing:
         response1 = client.get("/groups?page=1&page_size=1")
 
         assert set(g['id'] for g in response0.json()) != set(g['id'] for g in response1.json()), "Pagination is not working correctly, page 0 and page 1 returned the same data"
+
+
 
     def test_listing_with_invalid_pagination(self, client):
         """Test getting object lists from the database with invalid pagination parameters"""
