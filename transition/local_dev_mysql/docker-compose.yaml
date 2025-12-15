@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_wide_open
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: chtcusersdb
+      MYSQL_USER: chtc_user
+      MYSQL_PASSWORD: chtc_pass
+    command: --bind-address=0.0.0.0 --default-authentication-plugin=mysql_native_password
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./chtc_db.sql:/docker-entrypoint-initdb.d/chtc_db.sql:ro
+

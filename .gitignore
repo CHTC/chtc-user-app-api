@@ -1,2 +1,4 @@
 .env
 .venv
+.idea
+transition/local_dev_mysql/chtc_db.sql
