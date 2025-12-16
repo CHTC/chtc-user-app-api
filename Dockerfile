@@ -8,6 +8,6 @@ WORKDIR /app
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
-COPY userapp/api ./api
+COPY userapp ./userapp
 
-CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0"]
+CMD ["uvicorn", "userapp.main:app", "--host", "0.0.0.0"]
