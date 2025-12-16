@@ -33,11 +33,9 @@ class JoinedProjectView(Base):
 class UserSubmitNodesView(Base):
     __tablename__ = 'user_submit_nodes'
     __table_args__ = {'info': dict(is_view=True)}
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer)
-    submit_node_id = Column(Integer)
+    user_id = Column(Integer, primary_key=True)
+    submit_node_id = Column(Integer, primary_key=True)
     submit_node_name = Column(String(60))
-    for_auth_netid = Column(Boolean)
     disk_quota = Column(Integer)
     hpc_diskquota = Column(Integer)
     hpc_inodequota = Column(Integer)

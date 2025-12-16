@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response
 
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import is_admin
+from userapp.api.routes.security import check_is_admin
 from userapp.api.util import list_endpoint
 from userapp.core.models.views import PiProjectView as PiProjectViewTable
 from userapp.core.schemas.general import PiProjectView as PiProjectViewSchema
@@ -12,7 +12,7 @@ from userapp.core.schemas.general import PiProjectView as PiProjectViewSchema
 router = APIRouter(
     prefix="/pi-projects",
     tags=["PI Projects"],
-    dependencies=[Depends(is_admin)],
+    dependencies=[Depends(check_is_admin)],
     responses={
         404: {
             "description": "Not found"

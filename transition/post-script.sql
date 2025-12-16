@@ -1,8 +1,12 @@
 -- GROUPS TABLE MODIFICATIONS --
 
+UPDATE groups
+    SET point_of_contact = NULL
+    WHERE point_of_contact = '';
+
 -- Add CHECK constraint for groups
 ALTER TABLE groups
-    ADD CONSTRAINT chk_unix_gid_range CHECK (unix_gid BETWEEN 40000 AND 60000),
+    ADD CONSTRAINT chk_unix_gid_range CHECK (unix_gid BETWEEN 40000 AND 60000) NOT VALID,
     ADD CONSTRAINT chk_group_name_valid CHECK (name ~ '^[a-zA-Z0-9_-]{1,32}$');
 
 -- Add trigger function to enforce cross-table uniqueness of unix_gid/unix_uid
@@ -52,6 +56,12 @@ BEFORE INSERT ON groups
 FOR EACH ROW EXECUTE FUNCTION assign_lowest_unix_gid();
 
 -- USERS TABLE MODIFICATIONS --
+
+-- Add constraint to make sure netid is unique if not null --
+ALTER TABLE users
+    ADD CONSTRAINT uniq_netid_unique_if_not_null
+UNIQUE (netid)
+DEFERRABLE INITIALLY DEFERRED;
 
 -- Add constraint: username or netid must not both be null
 ALTER TABLE users
@@ -120,13 +130,13 @@ ALTER TABLE users
 CREATE OR REPLACE FUNCTION check_user_in_project_for_note()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Only check if user_id is not null
-    IF NEW.user_id IS NOT NULL THEN
-        IF NOT EXISTS (
-            SELECT 1 FROM user_projects WHERE user_id = NEW.user_id AND project_id = NEW.project_id
-        ) THEN
-            RAISE EXCEPTION 'User % is not associated with project % for this note', NEW.user_id, NEW.project_id;
-        END IF;
+    IF NEW.user_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM user_projects WHERE user_id = NEW.user_id AND project_id = NEW.project_id
+    ) THEN
+        RAISE EXCEPTION 'User % is not associated with project % for this note', NEW.user_id, NEW.project_id;
     END IF;
     RETURN NEW;
 END;
@@ -145,6 +155,7 @@ SELECT
     u.username,
     u.name,
     p.id AS project_id,
+    p.name AS project_name
 FROM users u
 JOIN user_projects up ON up.user_id = u.id
 JOIN projects p ON p.id = up.project_id
@@ -172,8 +183,15 @@ CREATE OR REPLACE VIEW joined_projects AS
 -- USER SUBMIT VIEW --
 
 CREATE OR REPLACE VIEW user_submit_nodes AS
-    SELECT
-        us.*,
+    SELECT DISTINCT
+        us.user_id,
+        us.submit_node_id,
+        us.disk_quota,
+        us.hpc_joblimit,
+        us.hpc_corelimit,
+        us.hpc_diskquota,
+        us.hpc_fairshare,
+        us.hpc_inodequota,
         s.name as submit_node_name
     FROM user_submits us
     JOIN submit_nodes s ON us.submit_node_id = s.id;
@@ -227,7 +245,3 @@ UPDATE notes
     WHERE ticket = '';
 
 -- GROUPS TABLE --
-
-UPDATE groups
-    SET point_of_contact = NULL
-    WHERE point_of_contact = '';

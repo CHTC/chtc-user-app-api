@@ -115,7 +115,11 @@ def user_factory(client: Client):
             json=user_payload
         )
         assert response.status_code == 201, f"Creating a user should return a 201 status code instead of {response.text}"
-        return response.json()
+
+        return {
+            **response.json(),
+            "password": user_payload["password"]
+        }
 
     return _create_user
 
@@ -127,3 +131,35 @@ def user(client: Client, project_factory: Callable, user_factory: Callable) -> d
     user = user_factory(0, project_id=project['id'])
     yield user
     client.delete(f"/users/{user['id']}")
+
+
+@pytest.fixture
+def user_auth_client(user) -> Generator[TestClient, Any, None]:
+    """Yields a TestClient that logs in the user, uses session cookies, and automatically adds CSRF token for state-changing requests."""
+
+    class CSRFAwareClient(TestClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.csrf_token = None
+
+        def request(self, method, url, **kwargs):
+            # For state-changing requests, add CSRF token header
+            if method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and self.csrf_token:
+                headers = kwargs.pop("headers", {}) or {}
+                headers = dict(headers)
+                headers["X-CSRF-Token"] = self.csrf_token
+                kwargs["headers"] = headers
+            return super().request(method, url, **kwargs)
+
+    with CSRFAwareClient(app) as client:
+        # Log in to obtain session and CSRF cookies
+        login_response = client.post("/login", json={
+            "username": user["username"],
+            "password": user["password"]
+        })
+        assert login_response.status_code == 200, f"Login failed for user {user['username']}: {login_response.text}"
+        # Extract CSRF token from cookies (adjust key as needed)
+        csrf_token = client.cookies.get("csrf_token")
+        assert csrf_token, "CSRF token cookie not set after login"
+        client.csrf_token = csrf_token
+        yield client

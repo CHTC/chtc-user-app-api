@@ -22,7 +22,7 @@ class Note(Base):
     __tablename__ = 'notes'
     id = Column(Integer, primary_key=True, index=True)
     ticket = Column(String(9))
-    note = Column(Text)
+    note = Column(Text, nullable=False)
     author = Column(String(255))
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
@@ -67,14 +67,14 @@ class User(Base):
     password = Column(String(255))
     email1 = Column(String(255), nullable=False)
     email2 = Column(String(255))
-    netid = Column(String(255), unique=True)
+    netid = Column(String(255)) # Should be unique post transition
     netid_exp_datetime = Column(TIMESTAMP)
     phone1 = Column(String(255))
     phone2 = Column(String(255))
-    is_admin = Column(Boolean)
-    auth_netid = Column(Boolean)
-    auth_username = Column(Boolean)
-    date = Column(TIMESTAMP, nullable=False)
+    is_admin = Column(Boolean, default=False)
+    auth_netid = Column(Boolean, default=False)
+    auth_username = Column(Boolean, default=False)
+    date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
 
@@ -106,7 +106,7 @@ class UserGroup(Base):
 class UserNote(Base):
     __tablename__ = 'user_notes'
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"))
+    project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False)
     note_id = Column(Integer, ForeignKey('notes.id', ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
 
@@ -133,4 +133,4 @@ class UserSubmit(Base):
     hpc_joblimit = Column(Integer, nullable=False, default=10)
     hpc_corelimit = Column(Integer, nullable=False, default=720)
     hpc_fairshare = Column(Integer, nullable=False, default=100)
-    __table_args__ = (UniqueConstraint('user_id', 'submit_node_id', name='user_submits_distinct'),)
+    __table_args__ = (UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),)

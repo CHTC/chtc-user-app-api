@@ -1,6 +1,6 @@
 import base64
 
-from userapp.api.tests.main import api_client, admin_user
+from userapp.api.tests.main import basic_auth_client as client, api_client, admin_user, project_factory, user_factory
 
 class TestSecurity:
 
@@ -170,3 +170,21 @@ class TestSecurity:
             }
         )
         assert response.status_code == 404
+
+
+    def test_new_user_login(self, client, user_factory, project_factory):
+        """Test logging in with a newly created user"""
+
+        project = project_factory()
+        user = user_factory(1, project['id'])
+
+        response = client.post(
+            "/login",
+            json={
+                "username": user['username'],
+                "password": user['password']
+            }
+        )
+
+        assert response.status_code == 200
+        assert "login_token" in response.cookies

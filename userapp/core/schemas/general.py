@@ -1,9 +1,17 @@
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict
+from typing import Optional
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator
 
 from userapp.core.models.enum import RoleEnum
 
 class BaseModel(PydanticBaseModel):
-    model_config = ConfigDict(extra='ignore', from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def empty_strs_to_none(cls, values):
+        if isinstance(values, dict):
+            return {k: (None if v == '' else v) for k, v in values.items()}
+        return values
 
 class Relationship(BaseModel):
     """Used to post entities to groups by id"""
@@ -15,8 +23,8 @@ class Login(BaseModel):
 
 class PiProjectView(BaseModel):
     user_id: int
-    username: str
-    name: str
+    username: Optional[str]
+    name: Optional[str]
     project_id: int
     project_name: str
 
@@ -31,4 +39,3 @@ class JoinedProjectView(BaseModel):
     project_name: str
     role: RoleEnum
     last_note_ticket: str | None
-

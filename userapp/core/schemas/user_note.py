@@ -1,20 +1,12 @@
-# Doubt we ever need this, but for completeness...
-
 from typing import Optional
+
+from pydantic import Field
 
 from userapp.core.schemas.general import BaseModel
 
+class UserNoteTableSchema(BaseModel):
+    """Used to represent a user-note association as stored in the database"""
 
-class UserNoteBase(BaseModel):
-    project_id: Optional[int] = None
+    project_id: int
     note_id: int
-    user_id: Optional[int] = None
-
-class UserNoteCreate(UserNoteBase):
-    pass
-
-class UserNoteUpdate(UserNoteBase):
-    pass
-
-class UserNote(UserNoteBase):
-    id: int
+    user_id: Optional[int] = Field(default=None)

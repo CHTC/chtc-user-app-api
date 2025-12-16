@@ -28,7 +28,6 @@ def project_data_f(
         "access": access,
         "accounting_group": f"accounting-group-{rand}",
         "url": url if url else "http://example.com",
-        "date": date.isoformat() if date else None,
         "ticket": ticket,
         "last_contact": last_contact.isoformat() if last_contact else None
     }
@@ -52,15 +51,13 @@ def user_data_f(index: int, primary_project_id) -> dict:
         "is_admin": False,
         "auth_netid": False,
         "auth_username": True,
-        "date": datetime.now().isoformat(),
         "unix_uid": rand,
         "position": PositionEnum.GRAD_STUDENT.name,
         "primary_project_id": primary_project_id,
         "primary_project_role": RoleEnum.MEMBER.name,
         "submit_nodes": [
             {
-                "submit_node_id": 1,
-                "for_auth_netid": False
+                "submit_node_id": 1
             }
         ]
     }

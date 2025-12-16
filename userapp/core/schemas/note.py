@@ -1,34 +1,43 @@
-from pydantic import BaseModel as PydanticBaseModel, AfterValidator, ConfigDict, field_serializer
+from pydantic import BaseModel as PydanticBaseModel, AfterValidator, ConfigDict, field_serializer, Field
 from typing import Optional, Annotated
 from datetime import datetime
 
 from userapp.core.schemas.general import BaseModel
-from userapp.core.schemas.users import User
 
+def note_ticket_validator(ticket: str) -> str | None:
 
-def note_ticket_validator(ticket: str) -> str:
+    # Allow None tickets
+    if ticket is None:
+        return ticket
+
     if not ticket.isalnum():
         raise ValueError("Ticket numbers must be alphanumeric with 9 characters or less")
     if len(ticket) > 9:
         raise ValueError("Ticket numbers must be alphanumeric with 9 characters or less")
     return ticket
 
+class NoteTableSchema(BaseModel):
 
-class NoteBase(BaseModel):
-    ticket: Annotated[Optional[str], AfterValidator(note_ticket_validator)] = None
-    note: Optional[str] = None
-    date: Optional[datetime] = None
+    model_config = ConfigDict(extra='ignore')
 
-class NoteCreate(NoteBase):
-    users: list[int] # Notes have to be associated with at least one user
+    id: Optional[int] = Field(default=None)
+    note: str
+    author: Optional[str] = Field(default=None)
+    ticket: Optional[str] = Field(default=None)
+    date: Optional[datetime] = Field(default=None)
 
-class NoteCreateRow(NoteBase):
-    author: str
+class NoteGet(BaseModel):
 
-class NoteUpdate(NoteBase):
-    pass
-
-class Note(NoteBase):
     id: int
-    author: Optional[str] = None
-    users: list[User] = []
+    note: str
+    author: Optional[str] = Field(default=None)
+    ticket: Annotated[Optional[str], AfterValidator(note_ticket_validator)] = Field(default=None)
+    date: Optional[datetime] = Field(default=None)
+
+class NoteGetFull(NoteGet):
+    users: list["UserGet"] = Field(default=[]) # Notes have to be associated with at least one user
+
+class NotePost(BaseModel):
+
+    note: str
+    ticket: Annotated[Optional[str], AfterValidator(note_ticket_validator)] = Field(default=None)

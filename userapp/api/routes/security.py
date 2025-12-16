@@ -13,7 +13,7 @@ from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
 from userapp.core.schemas.general import Login
-from userapp.core.schemas.users import User as UserSchema
+from userapp.core.schemas.users import UserGet
 from userapp.core.models.tables import User as UserTable
 from userapp.db import session_generator
 
@@ -21,6 +21,18 @@ pwd_context = CryptContext(
     schemes=["bcrypt", "sha512_crypt"],
     deprecated="auto",
 )
+
+def create_password_hash(plain_password: str) -> str:
+    """Create a password hash from a plaintext password.
+
+    Uses bcrypt by default.
+    """
+    hash = pwd_context.hash(plain_password)
+
+    if not verify_password(plain_password, hash):
+        raise ValueError("Failed to verify password hash after creation.")
+
+    return hash
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
@@ -90,7 +102,7 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
     return token_data
 
 
-async def get_user_from_basic_auth(credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)], session=Depends(session_generator)) -> UserSchema | None:
+async def get_user_from_basic_auth(credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)], session=Depends(session_generator)) -> UserGet | None:
     """Get the current user from basic auth header"""
 
     if credentials is None:
@@ -112,23 +124,29 @@ async def is_admin(user_token=Depends(get_user_from_cookie), basic_user=Depends(
     """Dependency to check if the user is an admin"""
 
     if not (user_token and user_token.is_admin) and not (basic_user and basic_user.is_admin):
-        raise HTTPException(status_code=403, detail="User is not an admin")
+        return False
 
     return True
 
+async def check_is_admin(is_admin=Depends(is_admin)):
+    """Raises error if not admin, otherwise does nothing"""
 
-async def is_user(user_id: int, user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
+    if not is_admin: raise HTTPException(status_code=403, detail="User is not an admin")
+
+
+async def is_user(user_id: int, user_token=Depends(get_user_from_cookie)):
     """Dependency to check if the user is the one currently logged in or an admin"""
 
-    # If admin then allow
-    if (user_token and user_token.is_admin) or (basic_user and basic_user.is_admin):
+    if user_token and (user_token.user_id == user_id):
         return True
 
-    # If user is operating on data belonging to themselves then allow
-    if user_token (user_token.user_id == user_id):
-        return True
+    return False
 
-    raise HTTPException(status_code=403, detail="Non-Admin user operating on data that doesn't belong to them.")
+
+async def check_is_user(is_user=Depends(is_user)):
+    """Raises error if not the user or admin, otherwise does nothing"""
+
+    if not is_user: raise HTTPException(status_code=403, detail="Non-Admin user operating on data that doesn't belong to them.")
 
 
 async def is_authenticated(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
@@ -204,7 +222,7 @@ async def login_user(response: Response, login: Login, session=Depends(session_g
         session_id = str(uuid.uuid4())
         response.set_cookie(
             "login_token",
-            f"Bearer {create_token(username=user.username, user_id=user.user_id, is_admin=user.is_admin, session_id=session_id)}",
+            f"Bearer {create_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
             httponly=True,
             samesite="strict"
         )
@@ -226,7 +244,7 @@ async def logout_user(response: Response):
 
 
 @router.get("/me")
-@router.post("/me") # Added for testing only
+@router.post("/me", include_in_schema=False) # Added for testing only
 async def get_current_user(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
     """Get the current user"""
 

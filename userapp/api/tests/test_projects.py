@@ -29,7 +29,7 @@ class TestProjects:
             json=note_data,
         )
 
-        assert response.status_code == 201, "Adding a note should return a 201 status code"
+        assert response.status_code == 201, f"Adding a note should return a 201 status code, not {response.text}"
 
         data = response.json()
 
