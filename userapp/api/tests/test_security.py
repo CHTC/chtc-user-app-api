@@ -1,6 +1,6 @@
 import base64
 
-from userapp.api.tests.main import basic_auth_client as client, api_client, admin_user, project_factory, user_factory
+from userapp.api.tests.main import basic_auth_client as client, user_auth_client as user_client, api_client, admin_user, project_factory, user_factory, user
 
 class TestSecurity:
 
@@ -188,3 +188,12 @@ class TestSecurity:
 
         assert response.status_code == 200
         assert "login_token" in response.cookies
+
+    def test_user_client_access(self, user, user_client):
+        """Test that a user client can access protected endpoints"""
+
+        response = user_client.get("/me")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['username'] == user['username']

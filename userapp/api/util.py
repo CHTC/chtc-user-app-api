@@ -15,12 +15,8 @@ def with_db_error_handling(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
-        except (DBAPIError, IntegrityError) as e:
-            if hasattr(e, 'orig') and e.orig:
-                error_message = f"Database error: {e.orig}"
-            else:
-                error_message = f"Database error: {str(e)}"
-            raise HTTPException(status_code=400, detail=error_message)
+        except (DBAPIError, IntegrityError):
+            raise HTTPException(status_code=400, detail="Database error occurred, likely due to violation of constraints.")
         except ValidationError as e:
             raise HTTPException(status_code=500, detail=f"Data validation error: {str(e)}")
     return wrapper
