@@ -141,7 +141,7 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
 async def get_user_projects(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[JoinedProjectViewSchema]:
     """Get projects associated with a user"""
 
-    filter_query_params.append(('user_id', f"eq.{user_id}"))
+    filter_query_params.append(('id', f"eq.{user_id}"))
     return await list_endpoint(session, JoinedProjectViewTable, response, filter_query_params, page, page_size)
 
 
