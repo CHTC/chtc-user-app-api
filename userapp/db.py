@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from fastapi import Depends
 
 from dotenv import load_dotenv
+from starlette.requests import Request
 
 load_dotenv()
 
@@ -31,7 +32,7 @@ async def connect_engine(db_url: str) -> AsyncEngine:
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    engine = create_async_engine(db_url, echo=True, connect_args={"ssl": False})
+    engine = create_async_engine(db_url, echo=True)
 
 
 async def dispose_engine():
@@ -40,9 +41,11 @@ async def dispose_engine():
 
 
 def get_async_session() -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(engine)
+    return async_sessionmaker(engine, expire_on_commit=False)
 
-async def session_generator(async_session_maker=Depends(get_async_session)) -> AsyncGenerator[AsyncSession, None]:
+async def session_generator(request: Request, async_session_maker=Depends(get_async_session)) -> AsyncGenerator[AsyncSession, None]:
     async with async_session_maker() as session:
         async with session.begin():
+            request.state.db_session = session
             yield session
+

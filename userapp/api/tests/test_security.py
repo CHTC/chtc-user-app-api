@@ -197,3 +197,14 @@ class TestSecurity:
         assert response.status_code == 200
         data = response.json()
         assert data['username'] == user['username']
+
+    def test_hash_password(self):
+        """Test that password hashing and verification works correctly"""
+
+        from userapp.api.routes.security import create_password_hash, verify_password
+
+        password = "password"
+        hashed_password = create_password_hash(password)
+
+        assert verify_password(password, hashed_password) is True
+        assert verify_password("WrongPassword", hashed_password) is False

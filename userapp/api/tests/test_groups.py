@@ -270,6 +270,37 @@ class TestGroups:
         )
         assert response.status_code == 404, f"Removing a non-associated user should return a 404 status code. Got {response.content} instead."
 
+
+    def test_remove_user_from_group(self, client):
+        """Test removing a user from a group"""
+
+        user_response = client.get(
+            "/users"
+        )
+        user = user_response.json()[0]
+        user_id = user.pop('id')
+
+        group_response = client.get(
+            "/groups"
+        )
+        group = group_response.json()[0]
+        group_id = group.pop('id')
+
+        # Add user to group
+        response = client.post(
+            f"/groups/{group_id}/users",
+            json={
+                "id": user_id
+            }
+        )
+        assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
+
+        # Now, delete the user from the group
+        response = client.delete(
+            f"/groups/{group_id}/users/{user_id}"
+        )
+        assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
+
     def test_delete_group(self, client):
         """Test deleting a group from the database"""
 

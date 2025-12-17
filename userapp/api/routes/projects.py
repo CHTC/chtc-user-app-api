@@ -160,3 +160,4 @@ async def delete_note_from_project(project_id: int, note_id: int, session=Depend
             UserNote.note_id == note_id
         )
     )
+
