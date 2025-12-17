@@ -6,6 +6,7 @@ from sqlalchemy import Enum as SQLEnum
 
 from userapp.core.models.enum import RoleEnum, PositionEnum
 from userapp.core.models.main import Base
+from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
 
 
@@ -90,6 +91,13 @@ class User(Base):
     submit_nodes: Mapped[List[UserSubmitNodesView]] = relationship(
         "UserSubmitNodesView",
         primaryjoin="User.id==foreign(UserSubmitNodesView.user_id)",
+        lazy="joined",
+        viewonly=True,
+    )
+
+    projects: Mapped[List["JoinedProjectView"]] = relationship(
+        "JoinedProjectView",
+        primaryjoin="User.id==foreign(JoinedProjectView.id)",
         lazy="joined",
         viewonly=True,
     )
