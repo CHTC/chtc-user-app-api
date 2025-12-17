@@ -70,6 +70,33 @@ class TestProjects:
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
 
+    def test_get_single_note(self, client, filled_out_project):
+        """Test getting a single note by ID"""
+
+        # Create the note
+        note_data = {
+            "ticket": "TICKET13",
+            "note": "This is a test note.",
+            "users": [*map(lambda u: u['id'], filled_out_project['users'])]
+        }
+        response = client.post(
+            f"/projects/{filled_out_project['id']}/notes",
+            json=note_data,
+        )
+        assert response.status_code == 201, "Adding a note should return a 201 status code"
+        created_note = response.json()
+
+        # Get the note by ID
+        note_response = client.get(
+            f"/projects/{filled_out_project['id']}/notes/{created_note['id']}",
+        )
+        assert note_response.status_code == 200, f"Getting a note by ID should return a 200 status code instead got {note_response.text}"
+
+        note = note_response.json()
+        assert note['ticket'] == note_data['ticket'], "The returned ticket does not match"
+        assert note['note'] == note_data['note'], "The returned note does not match"
+        assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
+
     def test_list_project_users(self, client, filled_out_project):
         """Test listing users in a project"""
 

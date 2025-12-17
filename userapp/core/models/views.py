@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
 
-from userapp.core.models.enum import RoleEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum
 from userapp.core.models.main import Base
 
 
@@ -18,14 +18,21 @@ class PiProjectView(Base):
 class JoinedProjectView(Base):
     __tablename__ = 'joined_projects'
     __table_args__ = {'info': dict(is_view=True)}
-    user_id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True)
     username = Column(String(255))
+    name = Column(String(255))
     email1 = Column(String(255))
+    email2 = Column(String(255))
+    netid = Column(String(255)) # Should be unique post transition
+    netid_exp_datetime = Column(TIMESTAMP)
     phone1 = Column(String(255))
-    netid = Column(String(255))
-    user_name = Column(String(255))
-    project_id = Column(Integer, primary_key=True)
-    project_name = Column(String(255))
+    phone2 = Column(String(255))
+    is_admin = Column(Boolean)
+    auth_netid = Column(Boolean)
+    auth_username = Column(Boolean)
+    date = Column(TIMESTAMP)
+    unix_uid = Column(Integer)
+    position = Column(SQLEnum(PositionEnum, name="position_enum"))
     role = Column(SQLEnum(RoleEnum, name="role_enum"))
     last_note_ticket = Column(String(9))
 

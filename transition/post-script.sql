@@ -166,14 +166,21 @@ WHERE up.role = 'PI';
 
 CREATE OR REPLACE VIEW joined_projects AS
     SELECT
-        up.user_id,
+        u.id,
         u.username,
+        u.name,
         u.email1,
-        u.phone1,
+        u.email2,
         u.netid,
-        u.name AS user_name,
-        up.project_id,
-        p.name AS project_name,
+        u.netid_exp_datetime,
+        u.phone1,
+        u.phone2,
+        u.is_admin,
+        u.auth_netid,
+        u.auth_username,
+        u.date,
+        u.unix_uid,
+        u.position,
         up.role,
         ( SELECT n.ticket FROM notes n LEFT JOIN user_notes un ON n.id = un.note_id WHERE un.user_id = up.user_id AND un.project_id = up.project_id ORDER BY n.id DESC LIMIT 1 ) AS last_note_ticket
     FROM user_projects up

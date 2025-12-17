@@ -1,7 +1,9 @@
+from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr
 
-from userapp.core.models.enum import RoleEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum
+
 
 class BaseModel(PydanticBaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -29,13 +31,20 @@ class PiProjectView(BaseModel):
     project_name: str
 
 class JoinedProjectView(BaseModel):
-    user_id: int
-    user_name: Optional[str] = Field(default=None)
+    id: Optional[int] = Field(default=None)
     username: Optional[str] = Field(default=None)
-    email1: str
-    phone1: Optional[str] = Field(default=None)
+    name: str
+    email1: EmailStr
+    email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
-    project_id: int
-    project_name: str
-    role: RoleEnum
+    netid_exp_datetime: Optional[datetime] = Field(default=None)
+    phone1: Optional[str] = Field(default=None)
+    phone2: Optional[str] = Field(default=None)
+    is_admin: Optional[bool] = Field(default=None)
+    auth_netid: Optional[bool] = Field(default=None)
+    auth_username: Optional[bool] = Field(default=None)
+    date: Optional[datetime] = Field(default=None)
+    unix_uid: Optional[int] = Field(default=None)
+    position: Optional[PositionEnum] = Field(default=None)
+    role: Optional[RoleEnum] = Field(default=None)
     last_note_ticket: Optional[str] = Field(default=None)

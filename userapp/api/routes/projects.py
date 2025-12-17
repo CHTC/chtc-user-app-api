@@ -118,6 +118,22 @@ async def get_project_notes(project_id: int, response: Response, page: int = 0, 
     return await list_select_stmt(session, select_stmt, NoteTable, response, filter_query_params, page, page_size)
 
 
+@router.get("/{project_id}/notes/{note_id}")
+async def get_project_note(project_id: int, note_id: int, session=Depends(session_generator)) -> NoteGetFull:
+    """Get a specific note associated with a project"""
+
+    select_stmt = select(NoteTable).join(
+        UserNote, NoteTable.id == UserNote.note_id
+    ).where(
+        UserNote.project_id == project_id,
+        UserNote.note_id == note_id
+    )
+    result = await session.scalar(select_stmt)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Note not found in project")
+    return result
+
+
 @router.post("/{project_id}/notes", status_code=201)
 async def add_note_to_project(project_id: int, note: ProjectNotePost, session=Depends(session_generator), user=Depends(user)) -> NoteGetFull:
     """Add a note to a project"""
