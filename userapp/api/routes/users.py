@@ -120,6 +120,9 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         # Add Submit Nodes from the update
         for submit_node in user.submit_nodes:
 
+            if submit_node.submit_node_id in [sn.submit_node_id for sn in updated_user.submit_nodes]:
+                continue  # Already exists
+
             # Create nodes for both auth_netid True and False to simplify logic
             for for_auth_netid in [True, False]:
 

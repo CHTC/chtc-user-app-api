@@ -84,6 +84,80 @@ class TestUsers:
         assert updated_data['position'] == update_payload['position'], "Position should be updated"
         assert updated_data['submit_nodes'][0]['submit_node_id'] == 2, "User submit node should be updated"
 
+    def test_update_users_submit_nodes(self, client: Client, user_factory, project_factory):
+        """Test updating user's submit nodes"""
+
+        project = project_factory()
+        user = user_factory(10, project['id'])
+
+        update_payload = {
+            "submit_nodes": [
+                {
+                    "submit_node_id": 19
+                },
+                {
+                    "submit_node_id": 20
+                }
+            ]
+        }
+
+        user_payload = client.patch(f"/users/7758", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
+        expected_submit_node_ids = set([19, 20])
+        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
+
+    def test_update_users_submit_nodes_twice(self, client: Client, user_factory, project_factory):
+        """Test updating user's submit nodes"""
+
+        project = project_factory()
+        user = user_factory(10, project['id'])
+
+        update_payload = {
+            "submit_nodes": [
+                {
+                    "submit_node_id": 19
+                },
+                {
+                    "submit_node_id": 20
+                }
+            ]
+        }
+
+        user_payload = client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
+        expected_submit_node_ids = set([19, 20])
+        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
+
+        update_payload = {
+            "submit_nodes": [
+                {
+                    "submit_node_id": 1
+                },
+                {
+                    "submit_node_id": 20
+                }
+            ]
+        }
+
+        user_payload = client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
+        expected_submit_node_ids = set([1, 20])
+        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
+
+
+
     def test_update_user_password(self, client: Client, user_factory, project_factory):
 
         project = project_factory()

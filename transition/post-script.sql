@@ -174,6 +174,7 @@ CREATE OR REPLACE VIEW joined_projects AS
         p.status AS project_status,
         p.last_contact AS project_last_contact,
         p.accounting_group AS project_accounting_group,
+        up.is_primary AS is_primary,
         u.username,
         u.name,
         u.email1,

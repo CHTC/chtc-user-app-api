@@ -39,6 +39,7 @@ class JoinedProjectView(BaseModel):
     project_status: Optional[str] = Field(default=None)
     project_last_contact: Optional[datetime] = Field(default=None)
     project_accounting_group: Optional[str] = Field(default=None)
+    is_primary: Optional[bool] = Field(default=None)
     username: Optional[str] = Field(default=None)
     name: str
     email1: EmailStr

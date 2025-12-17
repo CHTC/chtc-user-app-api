@@ -26,6 +26,7 @@ class JoinedProjectView(Base):
     project_status = Column(String(255))
     project_last_contact = Column(TIMESTAMP)
     project_accounting_group = Column(String(255))
+    is_primary = Column(Boolean)
     username = Column(String(255))
     name = Column(String(255))
     email1 = Column(String(255))
