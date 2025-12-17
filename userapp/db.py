@@ -33,7 +33,7 @@ async def connect_engine(db_url: str) -> AsyncEngine:
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    engine = create_async_engine(db_url, echo=True, connect_args={"ssl": False})
+    engine = create_async_engine(db_url, echo=True, connect_args={"ssl": True if os.environ.get("PYTHON_ENV") == "production" else False})
 
 
 async def dispose_engine():

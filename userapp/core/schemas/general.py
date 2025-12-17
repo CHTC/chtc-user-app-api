@@ -30,6 +30,7 @@ class PiProjectView(BaseModel):
 
 class JoinedProjectView(BaseModel):
     user_id: int
+    user_name: Optional[str] = Field(default=None)
     username: Optional[str] = Field(default=None)
     email1: str
     phone1: Optional[str] = Field(default=None)

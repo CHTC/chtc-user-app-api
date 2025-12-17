@@ -10,4 +10,6 @@ RUN pip install -r requirements.txt
 
 COPY userapp ./userapp
 
+ENV PYTHON_ENV=production
+
 CMD ["uvicorn", "userapp.main:app", "--host", "0.0.0.0"]
