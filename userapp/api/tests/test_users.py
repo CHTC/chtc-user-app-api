@@ -170,3 +170,30 @@ class TestUsers:
         submit_nodes = response.json()
         assert len(submit_nodes) > 0, "User should have at least one submit node"
         assert user['submit_nodes'][0]['submit_node_id'] in map(lambda x: x['submit_node_id'], submit_nodes), "User's submit nodes should include those from the filled out project"
+
+    def test_get_user_groups_simple(self, client: Client, user_factory, filled_out_project: dict):
+        """Test getting groups for a user"""
+        user = user_factory(random.randint(3001, 4000), filled_out_project['id'])
+
+        response = client.get(f"/users/{user['id']}/groups")
+
+        assert response.status_code == 200, f"Getting user groups should return a 200 status code, instead got {response.text}"
+        groups = response.json()
+        assert len(groups) == 0, "User should belong to no groups"
+
+    def test_get_user_groups_with_groups(self, client: Client, user_factory, project_factory):
+        """Test getting groups for a user who belongs to groups"""
+        project = project_factory()
+        user = user_factory(random.randint(4001, 5000), project['id'])
+
+        # Manually add user to groups in the database for testing
+        group_ids = [1, 2]
+        for group_id in group_ids:
+            client.post(f"/groups/{group_id}/users", json={"id": user['id']})
+
+        response = client.get(f"/users/{user['id']}/groups")
+
+        assert response.status_code == 200, f"Getting user groups should return a 200 status code, instead got {response.text}"
+        groups = response.json()
+        assert len(groups) == len(group_ids), f"User should belong to {len(group_ids)} groups"
+        assert all(group['id'] in group_ids for group in groups), "User's groups should match the added groups"

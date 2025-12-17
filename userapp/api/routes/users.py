@@ -3,6 +3,7 @@ from sqlalchemy import select
 from starlette.responses import Response
 from passlib.hash import sha256_crypt
 
+from userapp.core.schemas.groups import GroupGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
 from userapp.api.routes.security import check_is_admin, is_admin, is_user, verify_password, create_password_hash
@@ -16,7 +17,7 @@ from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSche
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
     UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView
-from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit
+from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild()
@@ -150,3 +151,17 @@ async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0,
 
     select_stmt = select(UserSubmitNodesViewTable).where(UserSubmitNodesViewTable.user_id == user_id)
     return await list_select_stmt(session, select_stmt, UserSubmitNodesViewTable, response, filter_query_params, page, page_size)
+
+
+@router.get("/{user_id}/groups")
+async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[GroupGet]:
+    """Get groups associated with a user"""
+
+    # Join Group to User via the UserGroups association table and filter by user_id
+    select_stmt = (
+        select(Group)
+        .join(UserGroup, Group.id == UserGroup.group_id)
+        .join(UserTable, UserGroup.user_id == UserTable.id)
+        .where(UserTable.id == user_id)
+    )
+    return await list_select_stmt(session, select_stmt, Group, response, filter_query_params, page, page_size)
