@@ -19,6 +19,13 @@ class JoinedProjectView(Base):
     __tablename__ = 'joined_projects'
     __table_args__ = {'info': dict(is_view=True)}
     id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, primary_key=True)
+    project_name = Column(String(255))
+    project_staff1 = Column(String(255))
+    project_staff2 = Column(String(255))
+    project_status = Column(String(255))
+    project_last_contact = Column(TIMESTAMP)
+    project_accounting_group = Column(String(255))
     username = Column(String(255))
     name = Column(String(255))
     email1 = Column(String(255))

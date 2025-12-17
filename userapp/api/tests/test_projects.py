@@ -97,6 +97,37 @@ class TestProjects:
         assert note['note'] == note_data['note'], "The returned note does not match"
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
+    def test_update_note(self, client, filled_out_project):
+        """Test updating a note"""
+
+        # Create the note
+        note_data = {
+            "ticket": "TICKET13",
+            "note": "This is a test note.",
+            "users": [*map(lambda u: u['id'], filled_out_project['users'])]
+        }
+        response = client.post(
+            f"/projects/{filled_out_project['id']}/notes",
+            json=note_data,
+        )
+        assert response.status_code == 201, "Adding a note should return a 201 status code"
+        created_note = response.json()
+
+        # Update the note
+        updated_note_data = {
+            "ticket": "TICKET14",
+            "note": "This is an updated test note.",
+        }
+        update_response = client.put(
+            f"/projects/{filled_out_project['id']}/notes/{created_note['id']}",
+            json=updated_note_data,
+        )
+        assert update_response.status_code == 200, f"Updating a note should return a 200 status code instead got {update_response.text}"
+
+        updated_note = update_response.json()
+        assert updated_note['ticket'] == updated_note_data['ticket'], "The updated ticket does not match"
+        assert updated_note['note'] == updated_note_data['note'], "The updated note does not match"
+
     def test_list_project_users(self, client, filled_out_project):
         """Test listing users in a project"""
 
@@ -106,7 +137,7 @@ class TestProjects:
         assert response.status_code == 200, f"Getting the project should return a 200 status code, instead got {response.text}"
         project_users = response.json()
 
-        assert len(project_users) >= 1, "There should be at least one user in the project"
+        assert len(project_users) == 2, "There should be at least one user in the project"
 
 
     def test_add_user_to_project(self, client, project, user):

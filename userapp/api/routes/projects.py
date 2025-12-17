@@ -164,6 +164,41 @@ async def add_note_to_project(project_id: int, note: ProjectNotePost, session=De
 
     return new_note
 
+@router.put("/{project_id}/notes/{note_id}")
+async def update_note_in_project(project_id: int, note_id: int, note: ProjectNotePost, session=Depends(session_generator), user=Depends(user)) -> NoteGetFull:
+    """Update a note in a project"""
+
+    # Update the note content
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user.username})
+    updated_note = await update_one_endpoint(session, NoteTable, note_id, note_row)
+
+    # Update the user associations
+    await session.execute(
+        delete(UserNote)
+        .where(
+            UserNote.project_id == project_id,
+            UserNote.note_id == note_id,
+            UserNote.user_id.is_not(None)
+        )
+    )
+
+    user_project_notes = [
+        UserNoteTableSchema(
+            project_id=project_id,
+            user_id=x,
+            note_id=note_id
+        ) for x in note.users
+    ]
+
+    for user_note in user_project_notes:
+        await create_one_endpoint(session, UserNote, user_note)
+
+    # Flush the associations and refresh the note to load them in
+    await session.flush()
+    await session.refresh(updated_note)
+
+    return updated_note
+
 
 @router.delete("/{project_id}/notes/{note_id}", status_code=204)
 async def delete_note_from_project(project_id: int, note_id: int, session=Depends(session_generator)):

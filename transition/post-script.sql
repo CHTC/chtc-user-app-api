@@ -167,6 +167,13 @@ WHERE up.role = 'PI';
 CREATE OR REPLACE VIEW joined_projects AS
     SELECT
         u.id,
+        p.id AS project_id,
+        p.name AS project_name,
+        p.staff1 AS project_staff1,
+        p.staff2 AS project_staff2,
+        p.status AS project_status,
+        p.last_contact AS project_last_contact,
+        p.accounting_group AS project_accounting_group,
         u.username,
         u.name,
         u.email1,
