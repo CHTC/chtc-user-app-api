@@ -6,6 +6,7 @@
 # On the bottom you will find the methods that do not use this method
 #
 import datetime
+import os
 from os import environ
 from typing import AsyncGenerator
 
@@ -32,7 +33,7 @@ async def connect_engine(db_url: str) -> AsyncEngine:
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    engine = create_async_engine(db_url, echo=True)
+    engine = create_async_engine(db_url, echo=True, connect_args={"ssl": False})
 
 
 async def dispose_engine():

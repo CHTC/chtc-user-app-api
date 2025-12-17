@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field
 
 from userapp.core.models.enum import RoleEnum
 
@@ -23,19 +23,18 @@ class Login(BaseModel):
 
 class PiProjectView(BaseModel):
     user_id: int
-    username: Optional[str]
-    name: Optional[str]
+    username: Optional[str] = Field(default=None)
+    name: Optional[str] = Field(default=None)
     project_id: int
     project_name: str
 
 class JoinedProjectView(BaseModel):
     user_id: int
-    username: str
+    username: Optional[str] = Field(default=None)
     email1: str
-    phone1: str
-    netid: str
-    user_name: str
+    phone1: Optional[str] = Field(default=None)
+    netid: Optional[str] = Field(default=None)
     project_id: int
     project_name: str
     role: RoleEnum
-    last_note_ticket: str | None
+    last_note_ticket: Optional[str] = Field(default=None)
