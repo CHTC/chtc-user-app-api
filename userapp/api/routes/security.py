@@ -152,10 +152,13 @@ async def check_is_user(is_user=Depends(is_user)):
 async def is_authenticated(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
     """Dependency to check if the user is authenticated"""
 
-    if not user_token and not basic_user:
-        raise HTTPException(status_code=401, detail="User is not authenticated")
+    return user_token or basic_user
 
-    return True
+
+async def check_is_authenticated(is_authenticated=Depends(is_authenticated)):
+    """Raises error if not authenticated, otherwise does nothing"""
+
+    if not is_authenticated: raise HTTPException(status_code=401, detail="User is not authenticated")
 
 
 async def user(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):

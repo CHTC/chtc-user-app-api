@@ -27,19 +27,6 @@ def api_client() -> Generator[TestClient, Any, None]:
 
 
 @pytest.fixture
-async def engine() -> AsyncEngine:
-    await connect_engine()
-    yield get_engine()
-    await dispose_engine()
-
-
-@pytest.fixture
-async def session(engine: AsyncEngine):
-    async_session = async_sessionmaker(engine)
-    yield async_session
-
-
-@pytest.fixture
 def admin_user() -> dict:
     return {
         "username": os.environ.get("TEST_ADMIN_USERNAME", "admin"),

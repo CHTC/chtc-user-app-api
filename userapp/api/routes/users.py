@@ -6,7 +6,8 @@ from passlib.hash import sha256_crypt
 from userapp.core.schemas.groups import GroupGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin, is_admin, is_user, verify_password, create_password_hash
+from userapp.api.routes.security import check_is_admin, is_admin, is_user, verify_password, create_password_hash, \
+    check_is_user
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
@@ -44,7 +45,7 @@ async def delete_user(user_id: int, session=Depends(session_generator), check_is
 
 
 @router.get("/{user_id}")
-async def get_user(user_id: int, session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> UserGetFull:
+async def get_user(user_id: int, session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> UserGetFull:
     return await get_one_endpoint(session, UserTable, user_id)
 
 

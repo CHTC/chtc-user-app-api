@@ -189,6 +189,25 @@ class TestUsers:
 
         assert user_payload.status_code == 500, f"Cannot nullify email1, should return a 500 status code, instead got {user_payload.text}"
 
+    def test_user_get_self(self, user, user_client):
+        """Test that a user can get their own details"""
+
+        user_payload = user_client.get(f"/users/{user['id']}")
+
+        assert user_payload.status_code == 200, f"User getting their own details should return a 200 status code, instead got {user_payload.text}"
+
+        fetched_user = user_payload.json()
+        assert fetched_user['id'] == user['id'], "Fetched user ID should match the user's ID"
+        assert fetched_user['name'] == user['name'], "Fetched user name should match the user's name"
+        assert fetched_user.get('password', None) == None, "Fetched user data has no data"
+
+
+    def test_user_get_other_user(self, user, user_client):
+        """Test that a user cannot get another user's details"""
+
+        user_payload = user_client.get(f"/users/{user['id'] - 1}")
+
+        assert user_payload.status_code == 403, f"User getting another user's details should return a 403 status code, instead got {user_payload.text}"
 
     def test_user_modifying_self(self, user, user_client):
         """Test that a user can modify their own details"""
