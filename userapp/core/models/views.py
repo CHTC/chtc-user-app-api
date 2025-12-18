@@ -13,6 +13,9 @@ class PiProjectView(Base):
     name = Column(String(255))
     project_id = Column(Integer, primary_key=True)
     project_name = Column(String(255))
+    email1 = Column(String(255))
+    phone1 = Column(String(255))
+    netid = Column(String(255))
 
 
 class JoinedProjectView(Base):

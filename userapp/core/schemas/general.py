@@ -29,6 +29,9 @@ class PiProjectView(BaseModel):
     name: Optional[str] = Field(default=None)
     project_id: int
     project_name: str
+    email1: Optional[str] = Field(default=None)
+    phone1: Optional[str] = Field(default=None)
+    netid: Optional[str] = Field(default=None)
 
 class JoinedProjectView(BaseModel):
     id: Optional[int] = Field(default=None)

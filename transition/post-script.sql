@@ -154,6 +154,9 @@ SELECT
     u.id AS user_id,
     u.username,
     u.name,
+    u.email1,
+    u.netid,
+    u.phone1,
     p.id AS project_id,
     p.name AS project_name
 FROM users u
