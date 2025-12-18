@@ -142,7 +142,7 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
 
 
 @router.get("/{user_id}/projects")
-async def get_user_projects(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[JoinedProjectViewSchema]:
+async def get_user_projects(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[JoinedProjectViewSchema]:
     """Get projects associated with a user"""
 
     filter_query_params.append(('id', f"eq.{user_id}"))
@@ -150,7 +150,7 @@ async def get_user_projects(user_id: int, response: Response, page: int = 0, pag
 
 
 @router.get("/{user_id}/submit_nodes")
-async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[UserSubmitGet]:
+async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserSubmitGet]:
     """Get submit nodes associated with a user"""
 
     select_stmt = select(UserSubmitNodesViewTable).where(UserSubmitNodesViewTable.user_id == user_id)
@@ -158,7 +158,7 @@ async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0,
 
 
 @router.get("/{user_id}/groups")
-async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[GroupGet]:
+async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[GroupGet]:
     """Get groups associated with a user"""
 
     # Join Group to User via the UserGroups association table and filter by user_id

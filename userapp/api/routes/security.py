@@ -143,10 +143,10 @@ async def is_user(user_id: int, user_token=Depends(get_user_from_cookie)):
     return False
 
 
-async def check_is_user(is_user=Depends(is_user)):
+async def check_is_user(is_user=Depends(is_user), is_admin=Depends(is_admin)):
     """Raises error if not the user or admin, otherwise does nothing"""
 
-    if not is_user: raise HTTPException(status_code=403, detail="Non-Admin user operating on data that doesn't belong to them.")
+    if not is_user and not is_admin: raise HTTPException(status_code=403, detail="Non-Admin user operating on data that doesn't belong to them.")
 
 
 async def is_authenticated(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
