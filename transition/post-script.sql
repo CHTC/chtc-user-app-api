@@ -1,8 +1,62 @@
--- GROUPS TABLE MODIFICATIONS --
+-- Clean up tables --
+
+-- USERS TABLE --
+
+UPDATE users
+    SET email1 = 'default@email.org'
+    WHERE email1 = '' OR email1 IS NULL;
+
+UPDATE users
+    SET name = 'Unknown Name'
+    WHERE name = '' OR name IS NULL;
+
+UPDATE users
+    SET email2 = NULL
+    WHERE email2 = '';
+
+UPDATE users
+    SET netid = NULL
+    WHERE netid = '';
+
+UPDATE users
+    SET phone1 = NULL
+    WHERE phone1 = '';
+
+UPDATE users
+    SET phone2 = NULL
+    WHERE phone2 = '';
+
+UPDATE users
+    SET netid = NULL
+    WHERE netid = '';
+
+-- PROJECTS TABLE --
+
+UPDATE projects
+    SET staff1 = NULL
+    WHERE staff1 = '';
+
+UPDATE projects
+    SET staff2 = NULL
+    WHERE staff2 = '';
+
+UPDATE projects
+    SET url = NULL
+    WHERE url = '';
+
+-- NOTES TABLE --
+
+UPDATE notes
+    SET ticket = NULL
+    WHERE ticket = '';
+
+-- GROUPS TABLE --
 
 UPDATE groups
     SET point_of_contact = NULL
     WHERE point_of_contact = '';
+
+-- GROUPS TABLE MODIFICATIONS --
 
 -- Add CHECK constraint for groups
 ALTER TABLE groups
@@ -66,19 +120,17 @@ DEFERRABLE INITIALLY DEFERRED;
 -- Add constraint: username or netid must not both be null
 ALTER TABLE users
     ADD CONSTRAINT chk_username_or_netid_not_null
-    CHECK (username IS NOT NULL OR netid IS NOT NULL);
+    CHECK (username IS NOT NULL OR netid IS NOT NULL) NOT VALID;
 
 -- Add constraint: if username is not null, password must not be null
 ALTER TABLE users
     ADD CONSTRAINT chk_password_if_username_not_null
-    CHECK (username IS NULL OR password IS NOT NULL);
+    CHECK (username IS NULL OR password IS NOT NULL) NOT VALID;
 
 -- Add constraint: username must not contain ':' or ';'
 ALTER TABLE users
     ADD CONSTRAINT chk_name_no_colon_semicolon
-    CHECK (name !~ ':' AND name !~ ';');
-
-
+    CHECK (name !~ ':' AND name !~ ';') NOT VALID;
 
 -- Remove the invalid generated column if present
 ALTER TABLE users DROP COLUMN IF EXISTS is_pi;
@@ -88,7 +140,7 @@ ALTER TABLE users DROP COLUMN IF EXISTS is_pi;
 -- Add constraint: staff1 and staff2 must not be equal when both are non-null
 ALTER TABLE projects
     ADD CONSTRAINT chk_staff1_not_equal_staff2
-    CHECK (staff1 IS NULL OR staff2 IS NULL OR staff1 <> staff2);
+    CHECK (staff1 IS NULL OR staff2 IS NULL OR staff1 <> staff2) NOT VALID;
 
 -- General Notes --
 -- Make sure GID is unique and we have removed the gids in uid range --
@@ -97,11 +149,7 @@ ALTER TABLE projects
 
 -- Update ints to enums --
 
--- 1. Create the enums
-CREATE TYPE role_enum AS ENUM ('MEMBER', 'PI');
-CREATE TYPE position_enum AS ENUM ('SELECT', 'FACULTY', 'STAFF', 'POSTDOC', 'GRAD_STUDENT', 'UNDERGRADUATE', 'OTHER');
-
--- 2. Convert user_projects.role from int to role_enum
+-- 1. Convert user_projects.role from int to role_enum
 ALTER TABLE user_projects
     ALTER COLUMN role DROP DEFAULT,
     ALTER COLUMN role TYPE role_enum USING (
@@ -111,7 +159,7 @@ ALTER TABLE user_projects
         END::role_enum
     );
 
--- 3. Convert users.position from int to position_enum
+-- 2. Convert users.position from int to position_enum
 ALTER TABLE users
     ALTER COLUMN position DROP DEFAULT,
     ALTER COLUMN position TYPE position_enum USING (
@@ -148,8 +196,7 @@ FOR EACH ROW EXECUTE FUNCTION check_user_in_project_for_note();
 
 
 -- Create a view with just PIs and their projects
-DROP TABLE IF EXISTS pi_projects;
-CREATE OR REPLACE VIEW pi_projects AS
+CREATE VIEW pi_projects AS
 SELECT
     u.id AS user_id,
     u.username,
@@ -167,7 +214,7 @@ WHERE up.role = 'PI';
 
 -- USER PROJECTS VIEW --
 
-CREATE OR REPLACE VIEW joined_projects AS
+CREATE VIEW joined_projects AS
     SELECT
         u.id,
         p.id AS project_id,
@@ -200,7 +247,7 @@ CREATE OR REPLACE VIEW joined_projects AS
 
 -- USER SUBMIT VIEW --
 
-CREATE OR REPLACE VIEW user_submit_nodes AS
+CREATE VIEW user_submit_nodes AS
     SELECT DISTINCT
         us.user_id,
         us.submit_node_id,
@@ -213,53 +260,3 @@ CREATE OR REPLACE VIEW user_submit_nodes AS
         s.name as submit_node_name
     FROM user_submits us
     JOIN submit_nodes s ON us.submit_node_id = s.id;
-
--- Clean up tables --
-
--- USERS TABLE --
-
-UPDATE users
-    SET email1 = 'default@email.org'
-    WHERE email1 = '' OR email1 IS NULL;
-
-UPDATE users
-    SET name = 'Unknown Name'
-    WHERE name = '' OR name IS NULL;
-
-UPDATE users
-    SET email2 = NULL
-    WHERE email2 = '';
-
-UPDATE users
-    SET netid = NULL
-    WHERE netid = '';
-
-UPDATE users
-    SET phone1 = NULL
-    WHERE phone1 = '';
-
-UPDATE users
-    SET phone2 = NULL
-    WHERE phone2 = '';
-
--- PROJECTS TABLE --
-
-UPDATE projects
-    SET staff1 = NULL
-    WHERE staff1 = '';
-
-UPDATE projects
-    SET staff2 = NULL
-    WHERE staff2 = '';
-
-UPDATE projects
-    SET url = NULL
-    WHERE url = '';
-
--- NOTES TABLE --
-
-UPDATE notes
-    SET ticket = NULL
-    WHERE ticket = '';
-
--- GROUPS TABLE --

@@ -36,6 +36,9 @@ import argparse
 from typing import List, Optional, Tuple
 
 from sqlalchemy import Table
+from sqlalchemy import create_engine, text, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 # Load .env early if present
 try:
@@ -163,16 +166,8 @@ def _tables_for_create_all(models_module) -> List[Table]:
 
 def migrate(
     batch_size: int,
-    tables: Optional[List[str]] = None,
-    truncate: bool = False,
-    drop_create: bool = False,
-    skip_ddl: bool = False,
     dry_run: bool = False,
 ) -> None:
-    # Heavy imports here
-    from sqlalchemy import create_engine, text, select
-    from sqlalchemy.engine import Engine
-    from sqlalchemy.exc import SQLAlchemyError
 
     # Import project models
     sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -191,142 +186,112 @@ def migrate(
     src_engine: Engine = create_engine(mysql_url, pool_pre_ping=True)
     dst_engine: Engine = create_engine(pg_url, pool_pre_ping=True)
 
-    tables_ordered = _ordered_tables(models_module)
-    if tables:
-        wanted = set(tables)
-        tables_ordered = [(n, t) for (n, t) in tables_ordered if n in wanted]
-        missing = wanted - {n for (n, _) in tables_ordered}
-        if missing:
-            print(f"Warning: requested tables not found in models: {', '.join(sorted(missing))}")
+    with dst_engine.connect() as dst_conn:
+        with dst_conn.begin():
 
-    # Ensure destination tables exist (DDL)
-    if not skip_ddl:
-        try:
-            print("Ensuring destination tables exist (create_all)…")
-            tables_to_create = _tables_for_create_all(models_module)
-            models_module.Base.metadata.create_all(dst_engine, tables=tables_to_create)
-        except Exception as e:
-            print(f"DDL create_all failed: {e}")
-            if drop_create:
-                print("Continuing due to --drop-create; will attempt drop/create per table if needed.")
+            # Run the pre-script.sql
+            print("Wiping out current source material")
+            dst_conn.execute(text(open('./pre-script.sql', "r").read()))
 
-    # TRANSACTION STRATEGY
-    # --------------------
-    # We no longer keep a single long-running transaction for the whole
-    # migration. Instead:
-    #   * Optional DDL (drop/truncate) runs in its own short transaction.
-    #   * Each table's bulk insert runs in its own transaction. When that
-    #     with-block exits, those rows are COMMITTED (flushed) and visible
-    #     for foreign keys from later tables.
-    #   * Row-level fallbacks (after a batch error) run each row in its own
-    #     short transaction so a single bad row can't poison anything else.
-    #   * Sequence fixing at the end runs in its own transaction.
+            tables_ordered = _ordered_tables(models_module)
 
-    with src_engine.connect() as src_conn:
-        # Optional truncate or drop/create in a dedicated transaction
-        if drop_create or truncate:
-            with dst_engine.begin() as ddl_conn:
-                if drop_create:
-                    print("Dropping and recreating destination tables…")
-                    for name, table in reversed(tables_ordered):
-                        try:
-                            ddl_conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{name}" CASCADE')
-                        except Exception as e:
-                            print(f"  Drop failed for {name}: {e}")
+            try:
+                print("Recreating destination tables exist (create_all)…")
+                tables_to_create = _tables_for_create_all(models_module)
+                models_module.Base.metadata.create_all(dst_conn, tables=tables_to_create)
+            except Exception as e:
+                print(f"DDL create_all failed: {e}")
+
+            with src_engine.connect() as src_conn:
+
+                # Main data copy: ONE TRANSACTION PER TABLE
+                for name, table in tables_ordered:
+                    # Each table has its own transaction; when this with-block exits,
+                    # all inserts into this table are COMMITTED.
+                    # Columns to transfer
+                    col_names = [c.name for c in table.columns]
+                    sel = select(*[table.c[c] for c in col_names])
+                    print(f"Table {name}: fetching from MySQL…")
                     try:
-                        tables_to_create = _tables_for_create_all(models_module)
-                        models_module.Base.metadata.create_all(ddl_conn.connection, tables=tables_to_create)
+                        result = src_conn.execute(sel.execution_options(stream_results=True))
                     except Exception as e:
-                        print(f"  create_all after drop failed: {e}")
-                elif truncate:
-                    print("Truncating destination tables…")
-                    for name, table in reversed(tables_ordered):
+                        print(f"  Select failed for {name}: {e}")
+                        continue
+
+                    fetched = 0
+                    inserted = 0
+
+                    if dry_run:
+                        # Count rows efficiently
                         try:
-                            ddl_conn.exec_driver_sql(f'TRUNCATE TABLE "{name}" RESTART IDENTITY CASCADE')
+                            count_res = src_conn.execute(text(f"SELECT COUNT(1) FROM `{name}`"))
+                            count = count_res.scalar() or 0
+                            print(f"  {name}: source rows = {_fmt_int(count)}")
                         except Exception as e:
-                            print(f"  Truncate failed for {name}: {e}")
+                            print(f"  Count failed for {name}: {e}")
+                        continue
 
-        # Main data copy: ONE TRANSACTION PER TABLE
-        for name, table in tables_ordered:
-            # Each table has its own transaction; when this with-block exits,
-            # all inserts into this table are COMMITTED.
-            with dst_engine.begin() as dst_conn:
-                # Columns to transfer
-                col_names = [c.name for c in table.columns]
-                sel = select(*[table.c[c] for c in col_names])
-                print(f"Table {name}: fetching from MySQL…")
-                try:
-                    result = src_conn.execute(sel.execution_options(stream_results=True))
-                except Exception as e:
-                    print(f"  Select failed for {name}: {e}")
-                    continue
+                    # Prepare insert statement
+                    ins = table.insert()
 
-                fetched = 0
-                inserted = 0
+                    while True:
+                        rows = result.fetchmany(batch_size)
+                        if not rows:
+                            break
+                        fetched += len(rows)
+                        # Build list[dict] preserving all columns
+                        payload = [dict(zip(col_names, row)) for row in rows]
+                        try:
+                            # Fast path: batch insert inside this table's transaction
+                            with dst_conn.begin_nested():
+                                dst_conn.execute(ins, payload)
+                            inserted += len(payload)
+                        except SQLAlchemyError as e:
+                            # Provide context for first row in batch
+                            print(f"  Insert error on table {name} after {_fmt_int(inserted)} rows: {e}")
+                            # Row-by-row fallback, each in its own independent transaction
+                            for rec in payload:
+                                try:
+                                    with dst_conn.begin_nested():
+                                        dst_conn.execute(ins, [rec])
+                                    inserted += 1
+                                except SQLAlchemyError as e2:
+                                    print(
+                                        f"    Skipped row due to error (row-level, independent tx): {e2}; "
+                                        f"row keys: {list(rec.keys())}"
+                                    )
+                        # Progress
+                        if fetched % (batch_size * 10) == 0:
+                            print(f"  {name}: {_fmt_int(fetched)} fetched, {_fmt_int(inserted)} inserted…")
 
-                if dry_run:
-                    # Count rows efficiently
-                    try:
-                        count_res = src_conn.execute(text(f"SELECT COUNT(1) FROM `{name}`"))
-                        count = count_res.scalar() or 0
-                        print(f"  {name}: source rows = {_fmt_int(count)}")
-                    except Exception as e:
-                        print(f"  Count failed for {name}: {e}")
-                    continue
+                    print(f"  {name}: done. {_fmt_int(fetched)} fetched, {_fmt_int(inserted)} inserted.")
 
-                # Prepare insert statement
-                ins = table.insert()
-
-                while True:
-                    rows = result.fetchmany(batch_size)
-                    if not rows:
-                        break
-                    fetched += len(rows)
-                    # Build list[dict] preserving all columns
-                    payload = [dict(zip(col_names, row)) for row in rows]
-                    try:
-                        # Fast path: batch insert inside this table's transaction
-                        dst_conn.execute(ins, payload)
-                        inserted += len(payload)
-                    except SQLAlchemyError as e:
-                        # Provide context for first row in batch
-                        print(f"  Insert error on table {name} after {_fmt_int(inserted)} rows: {e}")
-                        # Row-by-row fallback, each in its own independent transaction
-                        for rec in payload:
-                            try:
-                                with dst_engine.begin() as row_conn:
-                                    row_conn.execute(ins, [rec])
-                                inserted += 1
-                            except SQLAlchemyError as e2:
-                                print(
-                                    f"    Skipped row due to error (row-level, independent tx): {e2}; "
-                                    f"row keys: {list(rec.keys())}"
+                # Fix sequences for integer PKs named 'id' where a backing sequence exists,
+                # in a separate transaction so this doesn't depend on prior tx state.
+                print("Fixing Postgres sequences…")
+                for name, table in tables_ordered:
+                    if "id" in table.c and table.c["id"].primary_key:
+                        try:
+                            with dst_conn.begin_nested():
+                                # Use 1 as fallback if table is empty
+                                dst_conn.exec_driver_sql(
+                                    f"SELECT setval(pg_get_serial_sequence('{name}', 'id'), "
+                                    f"COALESCE((SELECT MAX(id) FROM \"{name}\"), 1), true)"
                                 )
-                    # Progress
-                    if fetched % (batch_size * 10) == 0:
-                        print(f"  {name}: {_fmt_int(fetched)} fetched, {_fmt_int(inserted)} inserted…")
+                                # Check if table is empty and print info
+                                count_res = dst_conn.execute(text(f"SELECT COUNT(1) FROM \"{name}\""))
+                                count = count_res.scalar() or 0
+                                if count == 0:
+                                    print(f"  {name}: table is empty, sequence set to 1.")
+                        except Exception as e:
+                            print(f"  Sequence fix skipped for {name}: {e}")
 
-                print(f"  {name}: done. {_fmt_int(fetched)} fetched, {_fmt_int(inserted)} inserted.")
+                dst_conn.execute(text(open("./post-script.sql", "r").read()))
 
-        # Fix sequences for integer PKs named 'id' where a backing sequence exists,
-        # in a separate transaction so this doesn't depend on prior tx state.
-        print("Fixing Postgres sequences…")
-        with dst_engine.begin() as seq_conn:
-            for name, table in tables_ordered:
-                if "id" in table.c and table.c["id"].primary_key:
-                    try:
-                        # Use 1 as fallback if table is empty
-                        seq_conn.exec_driver_sql(
-                            f"SELECT setval(pg_get_serial_sequence('{name}', 'id'), "
-                            f"COALESCE((SELECT MAX(id) FROM \"{name}\"), 1), true)"
-                        )
-                        # Check if table is empty and print info
-                        count_res = seq_conn.execute(text(f"SELECT COUNT(1) FROM \"{name}\""))
-                        count = count_res.scalar() or 0
-                        if count == 0:
-                            print(f"  {name}: table is empty, sequence set to 1.")
-                    except Exception as e:
-                        print(f"  Sequence fix skipped for {name}: {e}")
+                dst_conn.execute(text(f"""
+                    INSERT INTO tokens (id, description, token) VALUES
+                    (1, 'Initial admin token', '{os.getenv('TOKEN_HASH')}');
+                """))
 
     print("Migration completed.")
 
@@ -334,10 +299,6 @@ def migrate(
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Copy data from MySQL to PostgreSQL using SQLAlchemy models.")
     p.add_argument("--batch-size", type=int, default=1000, help="Number of rows to transfer per batch")
-    p.add_argument("--tables", nargs="*", help="Only migrate these tables (defaults to all in dependency-safe order)")
-    p.add_argument("--truncate", action="store_true", help="TRUNCATE destination tables before inserting")
-    p.add_argument("--drop-create", action="store_true", help="DROP and CREATE destination tables before inserting")
-    p.add_argument("--skip-ddl", action="store_true", help="Skip create_all DDL on destination")
     p.add_argument("--dry-run", action="store_true", help="Don't insert; just print source row counts")
     return p.parse_args(argv)
 
@@ -347,10 +308,6 @@ if __name__ == "__main__":
     try:
         migrate(
             batch_size=args.batch_size,
-            tables=args.tables,
-            truncate=args.truncate,
-            drop_create=args.drop_create,
-            skip_ddl=args.skip_ddl,
             dry_run=args.dry_run,
         )
     except KeyboardInterrupt:

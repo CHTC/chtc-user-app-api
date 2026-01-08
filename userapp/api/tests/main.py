@@ -38,16 +38,17 @@ def admin_user() -> dict:
 def basic_auth_client(admin_user) -> Generator[TestClient, Any, None]:
     """Yields a TestClient that automatically sends Basic Auth headers."""
 
-    class BasicAuthClient(TestClient):
-        def request(self, method, url, **kwargs):
-            credentials = f"{admin_user['username']}:{admin_user['password']}"
-            encoded = base64.b64encode(credentials.encode()).decode()
-            headers = kwargs.pop("headers", {}) or {}
-            headers = dict(headers)  # ensure mutable
-            headers["Authorization"] = f"Basic {encoded}"
-            return super().request(method, url, headers=headers, **kwargs)
+    with TestClient(app) as client:
 
-    with BasicAuthClient(app) as client:
+        r = client.post("/login", json={
+            "username": admin_user["username"],
+            "password": admin_user["password"]
+        })
+
+        assert r.status_code == 200, f"Login failed for admin user {admin_user['username']}: {r.text}"
+
+        client.headers['X-CSRF-TOKEN'] = client.cookies.get("csrf_token")
+
         yield client
 
 
@@ -118,6 +119,22 @@ def user(client: Client, project_factory: Callable, user_factory: Callable) -> d
     user = user_factory(0, project_id=project['id'])
     yield user
     client.delete(f"/users/{user['id']}")
+
+
+@pytest.fixture
+def token(client: Client) -> str:
+    """Fixture to create and yield an authentication token for a user."""
+
+    response = client.post(
+        "/tokens",
+        json={
+            "description": "Test Token"
+        }
+    )
+    assert response.status_code == 201, f"Creating a token should return a 201 status code instead of {response.text}"
+    data = response.json()
+    yield data["token"]
+    client.delete(f"/tokens/{data['id']}")
 
 
 @pytest.fixture

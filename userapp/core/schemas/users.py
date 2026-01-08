@@ -7,6 +7,7 @@ from userapp.core.schemas.general import JoinedProjectView
 from userapp.core.schemas.note import NoteGet
 from userapp.core.schemas.user_submit import UserSubmitGet, UserSubmitPost
 from userapp.core.schemas.general import BaseModel
+from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
 
@@ -85,6 +86,7 @@ class UserGetFull(UserGet):
     notes: list["NoteGet"] = Field(default=[])
     submit_nodes: list["UserSubmitGet"] = Field(default=[])
     projects: list["JoinedProjectView"] = Field(default=[])
+    groups: list["GroupGet"] = Field(default=[])
 
 class UserPost(BaseModel):
 

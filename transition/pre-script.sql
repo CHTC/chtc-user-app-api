@@ -1,2 +1,2 @@
-DROP DATABASE IF EXISTS "chtc-userapp";
-CREATE DATABASE "chtc-userapp";
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;

@@ -4,7 +4,7 @@ import os
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPBearer, HTTPBasic, HTTPBasicCredentials
+from fastapi.security import HTTPBearer, HTTPBasic
 from pydantic import BaseModel
 from starlette.responses import Response
 from jose import JWTError, jwt
@@ -13,8 +13,7 @@ from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
 from userapp.core.schemas.general import Login
-from userapp.core.schemas.users import UserGet
-from userapp.core.models.tables import User as UserTable
+from userapp.core.models.tables import User as UserTable, Token
 from userapp.db import session_generator
 
 pwd_context = CryptContext(
@@ -60,6 +59,10 @@ class TokenData(BaseModel):
     user_id: int
     is_admin: bool
 
+class ApiTokenData(BaseModel):
+    token_id: int
+    is_admin: bool
+
 router = APIRouter(
     tags=["Security"],
     responses={
@@ -102,31 +105,42 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
     return token_data
 
 
-async def get_user_from_basic_auth(credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)], session=Depends(session_generator)) -> UserGet | None:
-    """Get the current user from basic auth header"""
+async def get_auth_from_api_token(request: Request, session=Depends(session_generator), api_token=Depends(http_bearer)) -> ApiTokenData | None:
+    """Get the current user from an API token in the Authorization header"""
 
-    if credentials is None:
+    if api_token is None:
         return None
 
-    result = await session.execute(select(UserTable).where(UserTable.username == credentials.username))
-    user = result.unique().scalar_one_or_none()
+    if "." not in api_token.credentials:
+        return None
 
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+    token_id_str, token_value = api_token.credentials.split(".", 1)
 
-    # Check the password matches (supports bcrypt and sha512-crypt "$6$" hashes)
-    password_is_valid = verify_password(credentials.password, user.password)
+    try:
+        token_id = int(token_id_str)
+    except ValueError:
+        return None
 
-    return user if password_is_valid else None
+    result = await session.execute(select(Token).where(Token.id == token_id))
+    token = result.unique().scalar_one_or_none()
+
+    if token is None:
+        return None
+
+    # Check the token matches
+    password_is_valid = verify_password(token_value, token.token)
+
+    if not password_is_valid:
+        return None
+    
+    return ApiTokenData(token_id=token.id, is_admin=True)
 
 
-async def is_admin(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
+async def is_admin(user_token=Depends(get_user_from_cookie), api_token=Depends(get_auth_from_api_token)):
     """Dependency to check if the user is an admin"""
 
-    if not (user_token and user_token.is_admin) and not (basic_user and basic_user.is_admin):
-        return False
+    return (user_token and user_token.is_admin) or (api_token is not None)
 
-    return True
 
 async def check_is_admin(is_admin=Depends(is_admin)):
     """Raises error if not admin, otherwise does nothing"""
@@ -149,10 +163,10 @@ async def check_is_user(is_user=Depends(is_user), is_admin=Depends(is_admin)):
     if not is_user and not is_admin: raise HTTPException(status_code=403, detail="Non-Admin user operating on data that doesn't belong to them.")
 
 
-async def is_authenticated(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
+async def is_authenticated(user_token=Depends(get_user_from_cookie), api_token=Depends(get_auth_from_api_token)):
     """Dependency to check if the user is authenticated"""
 
-    return user_token or basic_user
+    return user_token or api_token
 
 
 async def check_is_authenticated(is_authenticated=Depends(is_authenticated)):
@@ -161,18 +175,7 @@ async def check_is_authenticated(is_authenticated=Depends(is_authenticated)):
     if not is_authenticated: raise HTTPException(status_code=401, detail="User is not authenticated")
 
 
-async def user(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
-    """Dependency to get the current user or raise 401"""
-
-    if user_token:
-        return user_token
-    elif basic_user:
-        return basic_user
-    else:
-        raise HTTPException(status_code=401, detail="User is not authenticated")
-
-
-def create_token(expires_delta: timedelta | None = None, **data):
+def create_login_token(expires_delta: timedelta | None = None, **data):
     """Create a JWT token"""
 
     to_encode = data.copy()
@@ -225,13 +228,13 @@ async def login_user(response: Response, login: Login, session=Depends(session_g
         session_id = str(uuid.uuid4())
         response.set_cookie(
             "login_token",
-            f"Bearer {create_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
+            f"Bearer {create_login_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
             httponly=True,
             samesite="strict"
         )
         response.set_cookie(
             "csrf_token",
-            create_token(session_id=session_id, random_value=str(uuid.uuid4())),
+            create_login_token(session_id=session_id, random_value=str(uuid.uuid4())),
             httponly=False,
             samesite="strict"
         )
@@ -248,12 +251,12 @@ async def logout_user(response: Response):
 
 @router.get("/me")
 @router.post("/me", include_in_schema=False) # Added for testing only
-async def get_current_user(user_token=Depends(get_user_from_cookie), basic_user=Depends(get_user_from_basic_auth)):
+async def get_current_user(user_token=Depends(get_user_from_cookie), api_token=Depends(get_auth_from_api_token)):
     """Get the current user"""
 
     if user_token:
         return {"username": user_token.username, "is_admin": user_token.is_admin, "user_id": user_token.user_id}
-    elif basic_user:
-        return {"username": basic_user.username, "is_admin": basic_user.is_admin}
+    elif api_token:
+        return {"token_id": api_token.token_id, "is_admin": True}
     else:
         raise HTTPException(status_code=401, detail="Not authenticated")

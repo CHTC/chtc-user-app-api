@@ -68,7 +68,7 @@ class User(Base):
     password = Column(String(255))
     email1 = Column(String(255), nullable=False)
     email2 = Column(String(255))
-    netid = Column(String(255)) # Should be unique post transition
+    netid = Column(String(255)) # Made unique via a Table constraint
     netid_exp_datetime = Column(TIMESTAMP)
     phone1 = Column(String(255))
     phone2 = Column(String(255))
@@ -100,6 +100,15 @@ class User(Base):
         primaryjoin="User.id==foreign(JoinedProjectView.id)",
         lazy="joined",
         viewonly=True,
+    )
+
+    groups: Mapped[List["Group"]] = relationship(
+        secondary="user_groups",
+        primaryjoin="User.id==UserGroup.user_id",
+        secondaryjoin="Group.id==UserGroup.group_id",
+        foreign_keys="[UserGroup.user_id, UserGroup.group_id]",
+        lazy="joined",
+        backref="users"
     )
 
 
@@ -142,3 +151,22 @@ class UserSubmit(Base):
     hpc_corelimit = Column(Integer, nullable=False, default=720)
     hpc_fairshare = Column(Integer, nullable=False, default=100)
     __table_args__ = (UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),)
+
+class Token(Base):
+    __tablename__ = 'tokens'
+    id = Column(Integer, primary_key=True, index=True)
+    created_by = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
+    token = Column(String(255), unique=True, nullable=False)
+    description = Column(String(255))
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    expires_at = Column(TIMESTAMP)
+
+class Access(Base):
+    __tablename__ = 'access'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    token_id = Column(Integer, ForeignKey('tokens.id'), nullable=True)
+    route = Column(String(255), nullable=False)
+    payload = Column(String(255), nullable=False)
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    expires_at = Column(TIMESTAMP)

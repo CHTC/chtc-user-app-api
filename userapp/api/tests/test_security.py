@@ -139,39 +139,6 @@ class TestSecurity:
         assert response.status_code == 403
 
 
-    def test_basic_authentication(self, api_client, admin_user):
-        """Test basic authentication"""
-
-        credentials = f"{admin_user['username']}:{admin_user['password']}"
-        encoded_credentials = base64.b64encode(credentials.encode()).decode()
-
-        response = api_client.get(
-            "/me",
-            headers={
-                "Authorization": f"Basic {encoded_credentials}"
-            }
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data['username'] == admin_user['username']
-
-
-    def test_basic_authentication_invalid(self, api_client):
-        """Test basic authentication with invalid credentials"""
-
-        credentials = "nonexistentuser:wrongpassword"
-        encoded_credentials = base64.b64encode(credentials.encode()).decode()
-
-        response = api_client.get(
-            "/me",
-            headers={
-                "Authorization": f"Basic {encoded_credentials}"
-            }
-        )
-        assert response.status_code == 404
-
-
     def test_new_user_login(self, client, user_factory, project_factory):
         """Test logging in with a newly created user"""
 

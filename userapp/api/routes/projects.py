@@ -5,7 +5,7 @@ from userapp.core.schemas.project_note import ProjectNotePost
 from userapp.core.schemas.user_note import UserNoteTableSchema
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin, user
+from userapp.api.routes.security import check_is_admin, get_user_from_cookie
 from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoint, update_one_endpoint, delete_one_endpoint, \
     list_select_stmt
 from userapp.core.schemas.projects import ProjectGet, ProjectPost, ProjectPatch
@@ -135,10 +135,10 @@ async def get_project_note(project_id: int, note_id: int, session=Depends(sessio
 
 
 @router.post("/{project_id}/notes", status_code=201)
-async def add_note_to_project(project_id: int, note: ProjectNotePost, session=Depends(session_generator), user=Depends(user)) -> NoteGetFull:
+async def add_note_to_project(project_id: int, note: ProjectNotePost, session=Depends(session_generator), user_token=Depends(get_user_from_cookie)) -> NoteGetFull:
     """Add a note to a project"""
 
-    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user.username})
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user_token.get('username', 'Automated Process')})
     new_note = await create_one_endpoint(session, NoteTable, note_row)
 
     # Associate this note to the project
@@ -165,11 +165,11 @@ async def add_note_to_project(project_id: int, note: ProjectNotePost, session=De
     return new_note
 
 @router.put("/{project_id}/notes/{note_id}")
-async def update_note_in_project(project_id: int, note_id: int, note: ProjectNotePost, session=Depends(session_generator), user=Depends(user)) -> NoteGetFull:
+async def update_note_in_project(project_id: int, note_id: int, note: ProjectNotePost, session=Depends(session_generator), user_token=Depends(get_user_from_cookie)) -> NoteGetFull:
     """Update a note in a project"""
 
     # Update the note content
-    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user.username})
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user_token.get('username', 'Automated Process')})
     updated_note = await update_one_endpoint(session, NoteTable, note_id, note_row)
 
     # Update the user associations
