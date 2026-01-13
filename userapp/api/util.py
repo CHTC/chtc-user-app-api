@@ -39,15 +39,11 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
             query_parser.get_group_by_column() is None:
         paginated_select_stmt = paginated_select_stmt.order_by(*query_parser.get_order_by_columns())
 
-    print(paginated_select_stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-
     result = await session.execute(paginated_select_stmt)
     results = result.unique().fetchall()
 
     # Get the total count for pagination
     count_stmt = select(func.count()).select_from(select_stmt.where(query_parser.where_expressions()).subquery())
-
-    print(count_stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
 
     num_results_total = await session.execute(count_stmt)
     response.headers["X-Total-Count"] = str(num_results_total.scalar())

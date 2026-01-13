@@ -20,6 +20,15 @@ trap cleanup EXIT
 
 on_err() {
   rc=$?
+  # Print error log to stderr for easier debugging/monitoring
+  if [ -s "$LOG" ]; then
+    echo "==== Migration error log (exit code: $rc) ====" >&2
+    cat "$LOG" >&2
+    echo "==== End of migration error log ====" >&2
+  else
+    echo "Migration failed with exit code $rc, but log file is empty" >&2
+  fi
+
   # Send failure email: include BODY as the message and attach the log for details.
   python3 send_email.py --from "chtc-cron-mailto@chtc.io" --to "clock@wisc.edu" --subject "🔥🔥🔥🔥🔥 - User App Database Failed Mirroring" --text "$BODY" --file "$LOG" || true
   exit $rc
