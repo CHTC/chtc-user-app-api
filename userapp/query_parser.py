@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from sqlalchemy.sql.expression import SQLColumnExpression
 from sqlalchemy import and_, Column, not_, Table, func, distinct, cast, String, case
 
-VALID_OPERATORS = ["not", "eq", "lt", "le", "gt", "ge", "ne", "like", "in", "is"]
+VALID_OPERATORS = ["not", "eq", "lt", "le", "gt", "ge", "ne", "like", "ilike", "in", "is"]
 
 log = logging.getLogger(__name__)
 
@@ -120,6 +120,13 @@ class QueryParameter:
                 value = cast_to_column_type(column, value)
                 return column.like(value)
 
+            case "ilike":
+                if value[0] != "%" or value[-1] != "%":
+                    value = f"%{value}%"
+
+                value = cast_to_column_type(column, value)
+                return column.ilike(value)
+
             case "in":
                 if value[0] != "(" or value[-1] != ")":
                     raise ParserException(
@@ -150,7 +157,7 @@ class QueryParameter:
 class QueryParser:
     """Used to parse the query parameters from the request"""
 
-    VALID_OPERATORS = ["not", "eq", "lt", "le", "gt", "ge", "ne", "like", "in", "is"]
+    VALID_OPERATORS = VALID_OPERATORS
 
     def __init__(self, columns: list[Column], query_params: list[dict] | None):
 
