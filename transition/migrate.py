@@ -79,7 +79,7 @@ def _build_postgres_url() -> str:
     user = os.getenv("POSTGRES_USER", "postgres")
     password = os.getenv("POSTGRES_PASSWORD", "password")
     db = os.getenv("POSTGRES_DB", "chtc-userapp")
-    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}?sslmode=disable"
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
 
 
 def _ordered_tables(models_module) -> List[Tuple[str, object]]:

@@ -37,7 +37,7 @@ async def connect_engine(db_url: str) -> AsyncEngine:
     if os.environ.get("PYTHON_ENV") != "production":
         connect_args["ssl"] = False
 
-    engine = create_async_engine(db_url, echo=True, connect_args=connect_args)
+    engine = create_async_engine(db_url, connect_args=connect_args)
 
 
 async def dispose_engine():
