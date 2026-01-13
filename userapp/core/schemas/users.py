@@ -25,7 +25,9 @@ def user_password_validator(password: str) -> str | None:
     return password
 
 
-def user_name_validator(username: str) -> str:
+def user_name_validator(username: str | None) -> str | None:
+    if username is None:
+        return username
     if not re.fullmatch(r'[^:,]*', username):
         raise ValueError("Username cannot contain the characters ':' or ','.")
     return username
