@@ -89,7 +89,10 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
         return None
 
     # Check that the CSRF token is valid if this is a state changing request
-    await csrf_middleware(request)
+    try:
+        await csrf_middleware(request)
+    except HTTPException:
+        return None
 
     try:
         payload = jwt.decode(
