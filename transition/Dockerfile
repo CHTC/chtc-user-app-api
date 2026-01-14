@@ -16,6 +16,7 @@ COPY userapp ./userapp
 COPY transition/full_migration.sh full_migration.sh
 COPY transition/pre-script.sql pre-script.sql
 COPY transition/post-script.sql post-script.sql
+COPY transition/post-transaction-script.sql post-transaction-script.sql
 COPY transition/migrate.py migrate.py
 COPY transition/intermediate_models.py intermediate_models.py
 COPY transition/send_email.py send_email.py
