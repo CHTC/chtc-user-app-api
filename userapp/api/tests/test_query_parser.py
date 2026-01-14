@@ -1,6 +1,8 @@
 from sqlalchemy import Table, MetaData, Column, String, Integer
 
-from userapp.query_parser import QueryParser
+import pytest
+
+from userapp.query_parser import QueryParser, ParserException
 
 from sqlalchemy.sql.expression import SQLColumnExpression
 
@@ -188,3 +190,53 @@ class TestParser:
         query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
         assert query_parser.get_order_by_columns()[0].element.name == "int_column"
         assert query_parser.get_order_by_columns()[1].element.name == "string_column"
+
+    def test_or_simple(self):
+        params = {
+            "or": "(string_column.eq.foo,int_column.eq.1)"
+        }
+
+        query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
+        sql = query_parser.where_expressions()
+
+        assert compile_statement(sql) == "test_table.string_column = 'foo' OR test_table.int_column = 1"
+
+    def test_or_with_like(self):
+        params = {
+            "or": "(string_column.like.%bar%,int_column.eq.2)"
+        }
+
+        query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
+        sql = query_parser.where_expressions()
+
+        assert compile_statement(sql) == "test_table.string_column LIKE '%bar%' OR test_table.int_column = 2"
+
+    def test_or_invalid_format(self):
+        params = {
+            "or": "string_column.eq.foo,int_column.eq.1"
+        }
+
+        query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
+
+        with pytest.raises(ParserException):
+            query_parser.where_expressions()
+
+    def test_or_invalid_column(self):
+        params = {
+            "or": "(unknown.eq.foo,int_column.eq.1)"
+        }
+
+        query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
+
+        with pytest.raises(ParserException):
+            query_parser.where_expressions()
+
+    def test_or_invalid_clause(self):
+        params = {
+            "or": "(string_column)"
+        }
+
+        query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
+
+        with pytest.raises(ParserException):
+            query_parser.where_expressions()

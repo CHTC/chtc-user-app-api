@@ -138,7 +138,7 @@ async def get_project_note(project_id: int, note_id: int, session=Depends(sessio
 async def add_note_to_project(project_id: int, note: ProjectNotePost, session=Depends(session_generator), user_token=Depends(get_user_from_cookie)) -> NoteGetFull:
     """Add a note to a project"""
 
-    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user_token.get('username', 'Automated Process')})
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user_token.username if user_token else 'Automated Process'})
     new_note = await create_one_endpoint(session, NoteTable, note_row)
 
     # Associate this note to the project
@@ -169,7 +169,7 @@ async def update_note_in_project(project_id: int, note_id: int, note: ProjectNot
     """Update a note in a project"""
 
     # Update the note content
-    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user_token.get('username', 'Automated Process')})
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author':  user_token.username if user_token else 'Automated Process'})
     updated_note = await update_one_endpoint(session, NoteTable, note_id, note_row)
 
     # Update the user associations

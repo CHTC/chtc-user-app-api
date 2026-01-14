@@ -3,7 +3,7 @@ import random
 
 from httpx import Client
 
-from userapp.api.tests.main import basic_auth_client as client, user_auth_client as user_client, user, admin_user, project_factory, user_factory
+from userapp.api.tests.main import api_client, basic_auth_client as client, user_auth_client as user_client, user, admin_user, project_factory, user_factory
 
 
 class TestSubmitNodesSecurity:

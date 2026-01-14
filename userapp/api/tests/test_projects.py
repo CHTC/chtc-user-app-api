@@ -161,5 +161,5 @@ class TestProjects:
         assert project_users_response.status_code == 200, f"Getting the project should return a 200 status code, instead got {project_users_response.text}"
         project_users = project_users_response.json()
 
-        user_ids_in_project = [user['user_id'] for user in project_users]
+        user_ids_in_project = [user['id'] for user in project_users]
         assert user['id'] in user_ids_in_project, "The created user should be in the project's users list"

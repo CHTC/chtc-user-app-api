@@ -15,7 +15,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 
 from sqlalchemy.sql.expression import SQLColumnExpression
-from sqlalchemy import and_, Column, not_, Table, func, distinct, cast, String, case
+from sqlalchemy import or_, and_, Column, not_, func, distinct, cast, String, case
 
 VALID_OPERATORS = ["not", "eq", "lt", "le", "gt", "ge", "ne", "like", "ilike", "in", "is"]
 
@@ -175,6 +175,11 @@ class QueryParser:
 
         for query_param in self.decomposed_query_params.values():
 
+            or_group = self.get_or(query_param)
+            if or_group is not None:
+                where_expressions.append(or_group)
+                continue
+
             # If the column is not mapped to a column, then skip
             if not query_param.is_mapped_to_column():
                 continue
@@ -189,6 +194,39 @@ class QueryParser:
 
         else:
             return and_(*where_expressions)
+
+
+    def get_or(self, query_param: QueryParameter):
+        """Handles the or operator for the query in format or=(col1.eq.val1,col2.lt.val2)"""
+
+        if query_param.column == "or":
+            if not query_param.value.startswith("(") or not query_param.value.endswith(")"):
+                raise ParserException(f"Or operator must be in format or=(col1.eq.val1,col2.lt.val2)")
+
+            or_expressions = []
+            or_clauses = query_param.value[1:-1].split(",")
+
+            for clause in or_clauses:
+                clause_split = clause.split(".")
+
+                if len(clause_split) < 2:
+                    raise ParserException(f"Or clause is invalid: {clause}")
+
+                column_name = clause_split[0]
+                operators, value = self._decompose_encoded_expression(".".join(clause_split[1:]))
+
+                col = self.columns.get(column_name, column_name)
+
+                if col == column_name:
+                    raise ParserException(f"Column ({column_name}) not found in table for or operator")
+
+                qp = QueryParameter(column=col, operators=operators, value=value)
+                or_expressions.append(qp.get_operator_expression())
+
+            return or_(*or_expressions)
+
+        return None
+
 
     @lru_cache
     def get_group_by_column(self):
@@ -266,6 +304,15 @@ class QueryParser:
         decomposed_query_params = MultiDict()
 
         for column_name, encoded_expression in self.query_params:
+
+            # Special handling for or operator
+            if column_name == "or":
+                decomposed_query_params.add(
+                    column_name,
+                    QueryParameter(column=column_name, operators=[], value=encoded_expression)
+                )
+                continue
+
             operators, value = self._decompose_encoded_expression(encoded_expression)
             value = urllib.parse.unquote(value)
 

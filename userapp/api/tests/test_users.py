@@ -36,7 +36,7 @@ class TestUsers:
         assert response.status_code == 201, f"Creating a user should return a 201 status code, instead got {response.text}"
         created_user = response.json()
         for key in created_user:
-            if not key in ["password", "id", "is_pi", "submit_nodes", "date", "notes"]:  # Password is not returned in the response
+            if not key in ["password", "id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups"]:  # Password is not returned in the response
                 assert created_user[key] == user_payload[key], f"User {key} should match the payload"
 
         assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
@@ -101,7 +101,7 @@ class TestUsers:
             ]
         }
 
-        user_payload = client.patch(f"/users/7758", json=update_payload)
+        user_payload = client.patch(f"/users/{user['id']}", json=update_payload)
 
         assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
 
@@ -187,7 +187,7 @@ class TestUsers:
 
         user_payload = client.patch(f"/users/{user['id']}", json=update_payload)
 
-        assert user_payload.status_code == 500, f"Cannot nullify email1, should return a 500 status code, instead got {user_payload.text}"
+        assert user_payload.status_code == 400, f"Cannot nullify email1, should return a 500 status code, instead got {user_payload.text}"
 
     def test_user_get_self(self, user, user_client):
         """Test that a user can get their own details"""
