@@ -293,6 +293,9 @@ def migrate(
                     (1, 'Initial admin token', '{os.getenv('TOKEN_HASH')}');
                 """))
 
+        sql = open("./post-transaction-script.sql", "r").read()
+        dst_conn.execution_options(isolation_level="AUTOCOMMIT").execute(text(sql))
+
     print("Migration completed.")
 
 
