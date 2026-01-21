@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 import os
-from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.security import HTTPBearer, HTTPBasic
+from fastapi.security import HTTPBearer
+import httpx
 from pydantic import BaseModel
-from starlette.responses import Response
+from starlette.responses import Response, RedirectResponse
 from jose import JWTError, jwt
 from sqlalchemy.future import select
 from passlib.context import CryptContext
@@ -20,6 +21,9 @@ pwd_context = CryptContext(
     schemes=["bcrypt", "sha512_crypt"],
     deprecated="auto",
 )
+
+STATE_EXPIRATION_MINUTES = 10
+
 
 def create_password_hash(plain_password: str) -> str:
     """Create a password hash from a plaintext password.
@@ -52,7 +56,6 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
 
 
 http_bearer = HTTPBearer(auto_error=False)
-http_basic = HTTPBasic(auto_error=False)
 
 class TokenData(BaseModel):
     username: str
@@ -193,6 +196,28 @@ def create_login_token(expires_delta: timedelta | None = None, **data):
     return encoded_jwt
 
 
+def create_state_token(state: str) -> str:
+    """Create a short-lived, signed/encrypted token for the OIDC state value."""
+
+    expires_delta = timedelta(minutes=STATE_EXPIRATION_MINUTES)
+    to_encode = {"state": state, "type": "oidc_state"}
+    expire = datetime.now(timezone.utc) + expires_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, os.environ["SECRET_KEY"], algorithm="HS256")
+
+
+def verify_state_token(token: str, expected_state: str) -> bool:
+    """Verify that the state token is valid and matches the expected raw state."""
+
+    try:
+        payload = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+        if payload.get("type") != "oidc_state":
+            return False
+        return payload.get("state") == expected_state
+    except JWTError:
+        return False
+
+
 async def csrf_middleware(request: Request):
     """CSRF protection middleware - Signed Double Submit Cookie Pattern"""
 
@@ -215,35 +240,153 @@ async def csrf_middleware(request: Request):
             raise HTTPException(status_code=403, detail="CSRF token mismatch")
 
 
-@router.post("/login")
-async def login_user(response: Response, login: Login, session=Depends(session_generator)):
+async def get_oidc_config() -> dict:
+    """Fetch the OIDC provider configuration from the discovery URL"""
 
-    result = await session.execute(select(UserTable).where(UserTable.username == login.username))
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        oidc_config_resp = await client.get(
+            os.environ["OIDC_DISCOVERY_URL"]
+        )
+
+    oidc_config_resp.raise_for_status()
+    oidc_config = oidc_config_resp.json()
+
+    if "authorization_endpoint" not in oidc_config:
+        raise HTTPException(status_code=500, detail="OIDC provider configuration is missing authorization endpoint")
+
+    if "token_endpoint" not in oidc_config:
+        raise HTTPException(status_code=500, detail="OIDC provider configuration is missing token endpoint")
+
+    if "jwks_uri" not in oidc_config:
+        raise HTTPException(status_code=500, detail="OIDC provider configuration is missing JWKS URI")
+
+    return oidc_config
+
+
+async def get_oidc_public_keys() -> dict:
+    """Fetch the OIDC provider public keys from the JWKS URL"""
+
+    oidc_config = await get_oidc_config()
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        jwks_resp = await client.get(
+            oidc_config["jwks_uri"]
+        )
+
+    jwks_resp.raise_for_status()
+    jwks = jwks_resp.json()
+
+    if "keys" not in jwks:
+        raise HTTPException(status_code=500, detail="OIDC JWKS response is missing keys")
+
+    return jwks
+
+
+@router.get("/login")
+async def login_user(request: Request):
+    """Begin Auth Code Flow - redirecting to OIDC provider for login"""
+
+    oidc_config = await get_oidc_config()
+
+    # Generate a random state and store an encrypted/signed version in a cookie
+    raw_state = str(uuid.uuid4())
+    state_token = create_state_token(raw_state)
+
+    auth_params = {
+        "response_type": "code",
+        "client_id": os.environ["OIDC_CLIENT_ID"],
+        "redirect_uri": f"{request.url.scheme}://{request.url.hostname}{f":{request.url.port}" if request.url.port else ""}/auth/oidc/callback",
+        "scope": "openid profile email",
+        "state": raw_state,
+    }
+
+    auth_url = f"{oidc_config["authorization_endpoint"]}?{urlencode(auth_params)}"
+
+    redirect_response = RedirectResponse(auth_url)
+
+    # Store the encrypted state token in a secure cookie for later verification
+    redirect_response.set_cookie(
+        key="oidc_state",
+        value=state_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=STATE_EXPIRATION_MINUTES * 60,
+    )
+
+    return redirect_response
+
+
+@router.get("/auth/oidc/callback")
+async def oidc_callback(request: Request, response: Response, session=Depends(session_generator)):
+    """OIDC Callback endpoint to complete login"""
+
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+
+    # Validate OIDC state against the encrypted cookie
+    state_cookie = request.cookies.get("oidc_state")
+    if not state or not state_cookie or not verify_state_token(state_cookie, state):
+        raise HTTPException(status_code=400, detail="Invalid or missing OIDC state")
+
+    oidc_config = await get_oidc_config()
+
+    # Exchange the authorization code for tokens
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        token_resp = await client.post(
+            oidc_config["token_endpoint"],
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": f"{request.url.scheme}://{request.url.hostname}{f":{request.url.port}" if request.url.port else ""}/auth/oidc/callback",
+                "client_id": os.environ["OIDC_CLIENT_ID"],
+                "client_secret": os.environ["OIDC_CLIENT_SECRET"],
+            },
+        )
+
+    token_resp.raise_for_status()
+    token_data = token_resp.json()
+
+    id_token = token_data.get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=500, detail="ID token not provided by OIDC provider")
+
+    # Decode the ID token to get user info
+    try:
+        oidc_public_keys = await get_oidc_public_keys()
+        id_token_payload = jwt.decode(id_token, oidc_public_keys, access_token=token_data['access_token'], audience=os.environ["OIDC_CLIENT_ID"])
+        netid = id_token_payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=500, detail="Failed to decode ID token")
+
+    if not netid:
+        raise HTTPException(status_code=500, detail="ID token missing required user information")
+
+    # Look up the user in the database
+    result = await session.execute(select(UserTable).where(UserTable.netid == netid))
     user = result.scalars().first()
 
     if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="User not found")
 
-    # Check the password matches (supports bcrypt and sha512-crypt "$6$" hashes)
-    password_is_valid = verify_password(login.password, user.password)
+    session_id = str(uuid.uuid4())
+    response.set_cookie(
+        "login_token",
+        f"Bearer {create_login_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
+        httponly=True,
+        samesite="strict"
+    )
+    response.set_cookie(
+        "csrf_token",
+        create_login_token(session_id=session_id, random_value=str(uuid.uuid4())),
+        httponly=False,
+        samesite="strict"
+    )
 
-    if password_is_valid:
-        session_id = str(uuid.uuid4())
-        response.set_cookie(
-            "login_token",
-            f"Bearer {create_login_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
-            httponly=True,
-            samesite="strict"
-        )
-        response.set_cookie(
-            "csrf_token",
-            create_login_token(session_id=session_id, random_value=str(uuid.uuid4())),
-            httponly=False,
-            samesite="strict"
-        )
-        return {"message": "Login successful"}
-    else:
-        raise HTTPException(status_code=401, detail="Invalid password")
+    return {"message": "Login successful"}
 
 
 @router.post("/logout")

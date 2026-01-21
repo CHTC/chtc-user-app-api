@@ -22,6 +22,8 @@ class AppSettings(BaseSettings):
     DB_PASSWORD: Optional[str] = None
     DB_URL: Optional[str] = None
     SECRET_KEY: str
+    OIDC_CLIENT_ID: Optional[str] = None
+    OIDC_CLIENT_SECRET: Optional[str] = None
 
 
 settings = AppSettings()
@@ -66,7 +68,7 @@ for router in all_routers:
     app.include_router(router)
 
 async def main():
-    config = uvicorn.Config("userapp.main:app", port=8001, log_level="info")
+    config = uvicorn.Config("userapp.main:app", host="0.0.0.0", port=80, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
 
