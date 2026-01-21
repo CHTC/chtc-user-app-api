@@ -310,13 +310,13 @@ async def login_user(request: Request):
 
     # Determine where to return after login. Prefer explicit "next" query
     # parameter, otherwise fall back to the current path.
-    next_path = request.query_params.get("next") or request.url.path
+    next_path = request.query_params.get("next") or "/"
 
     # Generate a random state and store an encrypted/signed version in a cookie
     raw_state = str(uuid.uuid4())
     state_token = create_state_token(raw_state, next_path=next_path)
 
-    redirect_uri = f"{request.url.scheme}://{request.url.hostname}{f":{request.url.port}" if request.url.port else ""}/auth/oidc/callback"
+    redirect_uri = f"https://{request.url.hostname}/auth/oidc/callback" if 'PYTHON_ENV' in os.environ and os.environ['PYTHON_ENV'] == "production" else "http://localhost/auth/oidc/callback"
 
     auth_params = {
         "response_type": "code",
@@ -365,7 +365,7 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
 
     oidc_config = await get_oidc_config()
 
-    redirect_uri = f"{request.url.scheme}://{request.url.hostname}{f":{request.url.port}" if request.url.port else ""}/auth/oidc/callback"
+    redirect_uri = f"https://{request.url.hostname}/auth/oidc/callback" if 'PYTHON_ENV' in os.environ and os.environ['PYTHON_ENV'] == "production" else "http://localhost/auth/oidc/callback"
 
     # Exchange the authorization code for tokens
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -405,6 +405,18 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # Determine where to send the user after login
+    next_path = state_payload.get("next_path") if state_payload else None
+
+    # Default to root if we don't have a next_path
+    redirect_target = next_path or "/"
+
+    # Ensure redirect_target is a relative path to avoid open redirects
+    if not redirect_target.startswith("/"):
+        redirect_target = "/" + redirect_target
+
+    response = RedirectResponse(url=redirect_target)
+
     session_id = str(uuid.uuid4())
     response.set_cookie(
         "login_token",
@@ -419,17 +431,7 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
         samesite="strict"
     )
 
-    # Determine where to send the user after login
-    next_path = state_payload.get("next_path") if state_payload else None
-
-    # Default to root if we don't have a next_path
-    redirect_target = next_path or "/"
-
-    # Ensure redirect_target is a relative path to avoid open redirects
-    if not redirect_target.startswith("/"):
-        redirect_target = "/" + redirect_target
-
-    return RedirectResponse(url=redirect_target)
+    return response
 
 
 @router.post("/logout")
