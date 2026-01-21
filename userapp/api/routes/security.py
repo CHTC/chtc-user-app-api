@@ -398,17 +398,17 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
     if not netid:
         raise HTTPException(status_code=500, detail="ID token missing required user information")
 
-    # # Look up the user in the database
-    # result = await session.execute(select(UserTable).where(UserTable.netid == netid))
-    # user = result.scalars().first()
-    #
-    # if user is None:
-    #     raise HTTPException(status_code=401, detail="User not found")
+    # Look up the user in the database
+    result = await session.execute(select(UserTable).where(UserTable.netid == netid))
+    user = result.scalars().first()
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
 
     session_id = str(uuid.uuid4())
     response.set_cookie(
         "login_token",
-        f"Bearer {create_login_token(username="test", user_id="test", is_admin="test", session_id=session_id)}",
+        f"Bearer {create_login_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
         httponly=True,
         samesite="strict"
     )

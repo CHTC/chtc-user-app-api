@@ -68,7 +68,7 @@ for router in all_routers:
     app.include_router(router)
 
 async def main():
-    config = uvicorn.Config("userapp.main:app", host="0.0.0.0", port=80, log_level="info")
+    config = uvicorn.Config("userapp.main:app", host="0.0.0.0", port=8000, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
 
