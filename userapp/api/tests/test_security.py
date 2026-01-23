@@ -1,5 +1,4 @@
-import base64
-
+from userapp.api.routes.security import check_ip_in_whitelist, get_ip_whitelist
 from userapp.api.tests.main import basic_auth_client as client, user_auth_client as user_client, api_client, admin_user, project_factory, user_factory, user
 
 class TestSecurity:
@@ -175,3 +174,14 @@ class TestSecurity:
 
         assert verify_password(password, hashed_password) is True
         assert verify_password("WrongPassword", hashed_password) is False
+
+    def test_ip_whitelist(self):
+        """Test that IP whitelist works correctly"""
+
+        ip_whitelist_string = "128.104.55.0/24, 128.104.58.0/23, 128.104.100.0/22, 128.105.68.0/23, 128.105.76.0/24, 128.105.82.0/24, 128.105.244.0/23"
+
+        test_ip_valid = "128.104.55.10"
+        assert check_ip_in_whitelist(test_ip_valid, ip_whitelist_string) == True
+
+        test_ip_invalid = "128.114.55.10"
+        assert check_ip_in_whitelist(test_ip_invalid, ip_whitelist_string) == False

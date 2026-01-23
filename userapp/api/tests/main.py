@@ -1,24 +1,24 @@
 from typing import Any, Generator, Callable
 import pytest
 import os
-import base64
 
 from httpx import Client
-from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
-# Have to run before the imports that use the db env variables
 from dotenv import load_dotenv
 from starlette.testclient import TestClient
 
 load_dotenv()
 
 from userapp.main import app
-from userapp.db import connect_engine, dispose_engine, get_engine
+from userapp.api.routes.security import create_login_token
 from userapp.api.tests.fake_data import project_data_f, user_data_f
 
 os.environ["DB_URL"] = os.environ.get("TEST_DB_URL", "sqllite+aiosqlite:///./test.db")
 
+VALID_CIDR_RANGE = '128.104.55.0/24'
+INVALID_CIDR_RANGE = '127.0.0.0/24'
+WHITE_IP = VALID_CIDR_RANGE.split('/')[0]
+BLACK_IP = INVALID_CIDR_RANGE.split('/')[0]
 
 @pytest.fixture
 def api_client() -> Generator[TestClient, Any, None]:
@@ -36,18 +36,36 @@ def admin_user() -> dict:
 
 @pytest.fixture
 def basic_auth_client(admin_user) -> Generator[TestClient, Any, None]:
-    """Yields a TestClient that automatically sends Basic Auth headers."""
+    """Yields a TestClient authenticated as admin_user via SSO-style cookies.
+
+    The app now relies on SSO/OIDC and expects a JWT-bearing `login_token`
+    cookie (with a leading "Bearer ") and a separate `csrf_token` cookie
+    tied to the same `session_id`. This fixture constructs those tokens
+    directly, so tests don't depend on the interactive login flow.
+    """
 
     with TestClient(app) as client:
+        # Create a synthetic session id for this test client
+        session_id = "test-session-admin"
 
-        r = client.post("/login", json={
-            "username": admin_user["username"],
-            "password": admin_user["password"]
-        })
+        # Build the JWT used by get_user_from_cookie / is_admin via login_token
+        login_jwt = create_login_token(
+            username=admin_user["username"],
+            user_id=0,  # user id isn't strictly needed for admin checks in tests
+            is_admin=True,
+            session_id=session_id,
+        )
 
-        assert r.status_code == 200, f"Login failed for admin user {admin_user['username']}: {r.text}"
+        # CSRF token is a separate JWT that embeds the same session_id
+        csrf_jwt = create_login_token(session_id=session_id, random_value="test")
 
-        client.headers['X-CSRF-TOKEN'] = client.cookies.get("csrf_token")
+        # The app expects the cookie value to start with "Bearer "
+        client.cookies.set("login_token", f"Bearer {login_jwt}")
+        client.cookies.set("csrf_token", csrf_jwt)
+
+        # For convenience, automatically send the CSRF token header on
+        # state-changing requests in tests that use this fixture.
+        client.headers["X-CSRF-Token"] = csrf_jwt
 
         yield client
 
@@ -141,29 +159,48 @@ def token(client: Client) -> str:
 def user_auth_client(user) -> Generator[TestClient, Any, None]:
     """Yields a TestClient that logs in the user, uses session cookies, and automatically adds CSRF token for state-changing requests."""
 
-    class CSRFAwareClient(TestClient):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.csrf_token = None
+    with TestClient(app) as client:
+        # Create a synthetic session id for this test client
+        session_id = "test-session-admin"
 
-        def request(self, method, url, **kwargs):
-            # For state-changing requests, add CSRF token header
-            if method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and self.csrf_token:
-                headers = kwargs.pop("headers", {}) or {}
-                headers = dict(headers)
-                headers["X-CSRF-Token"] = self.csrf_token
-                kwargs["headers"] = headers
-            return super().request(method, url, **kwargs)
+        # Build the JWT used by get_user_from_cookie / is_admin via login_token
+        login_jwt = create_login_token(
+            username=user["username"],
+            user_id=user['id'],
+            is_admin=user['is_admin'],
+            session_id=session_id,
+        )
 
-    with CSRFAwareClient(app) as client:
-        # Log in to obtain session and CSRF cookies
-        login_response = client.post("/login", json={
-            "username": user["username"],
-            "password": user["password"]
-        })
-        assert login_response.status_code == 200, f"Login failed for user {user['username']}: {login_response.text}"
-        # Extract CSRF token from cookies (adjust key as needed)
-        csrf_token = client.cookies.get("csrf_token")
-        assert csrf_token, "CSRF token cookie not set after login"
-        client.csrf_token = csrf_token
+        # CSRF token is a separate JWT that embeds the same session_id
+        csrf_jwt = create_login_token(session_id=session_id, random_value="test")
+
+        # The app expects the cookie value to start with "Bearer "
+        client.cookies.set("login_token", f"Bearer {login_jwt}")
+        client.cookies.set("csrf_token", csrf_jwt)
+
+        # For convenience, automatically send the CSRF token header on
+        # state-changing requests in tests that use this fixture.
+        client.headers["X-CSRF-Token"] = csrf_jwt
+
         yield client
+
+
+@pytest.fixture
+def token_auth_client(token: str) -> Callable[[str], TestClient]:
+    """
+    Returns a factory that creates a TestClient using token auth
+    from a specified client IP.
+
+    Usage in tests:
+        def test_something(token_auth_client):
+            with token_auth_client("128.104.55.10") as client:
+                ...
+    """
+
+    def _make_client(ip: str = WHITE_IP) -> TestClient:
+        # You can also make the port configurable if you need.
+        client = TestClient(app, client=(ip, 443))
+        client.headers["Authorization"] = f"Bearer {token}"
+        return client
+
+    return _make_client

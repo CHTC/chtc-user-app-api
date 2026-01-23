@@ -2,6 +2,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 import os
 from urllib.parse import urlencode
+import ipaddress
+from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer
@@ -111,10 +113,42 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
     return token_data
 
 
+@lru_cache()
+def get_ip_whitelist(whitelist_str: str):
+    """Parse a comma-separated whitelist of IPs/CIDRs into a list of ipaddress objects"""
+
+    whitelist = []
+    whitelist_entries = [entry.strip() for entry in whitelist_str.split(",")]
+
+    for entry in whitelist_entries:
+        try:
+            # Only CIDR notation is supported in this function
+            if "/" in entry:
+                network = ipaddress.ip_network(entry, strict=False)
+                whitelist.append(network)
+        except ValueError:
+            continue  # Only allow CIDR
+
+    return whitelist
+
+
+def check_ip_in_whitelist(ip_str: str, whitelist_str: str) -> bool:
+    """Check if an IP address is in a comma-separated whitelist of IPs/CIDRs"""
+
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        ip_whitelist = get_ip_whitelist(whitelist_str)
+        return any(ip in network for network in ip_whitelist)
+    except ValueError:
+        return False
+
 async def get_auth_from_api_token(request: Request, session=Depends(session_generator), api_token=Depends(http_bearer)) -> ApiTokenData | None:
     """Get the current user from an API token in the Authorization header"""
 
     if api_token is None:
+        return None
+
+    if "TOKEN_IP_WHITELIST" in os.environ and not check_ip_in_whitelist(request.client.host, os.environ["TOKEN_IP_WHITELIST"]):
         return None
 
     if "." not in api_token.credentials:
