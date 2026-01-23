@@ -12,4 +12,4 @@ COPY userapp ./userapp
 
 ENV PYTHON_ENV=production
 
-CMD ["uvicorn", "userapp.main:app", "--host", "0.0.0.0"]
+CMD ["uvicorn", "userapp.main:app", "--host", "0.0.0.0", "--proxy-headers", "--forwarded-allow-ips", "*"]
