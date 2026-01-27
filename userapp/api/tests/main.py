@@ -30,7 +30,8 @@ def api_client() -> Generator[TestClient, Any, None]:
 def admin_user() -> dict:
     return {
         "username": os.environ.get("TEST_ADMIN_USERNAME", "admin"),
-        "password": os.environ.get("TEST_ADMIN_PASSWORD", "password")
+        "password": os.environ.get("TEST_ADMIN_PASSWORD", "password"),
+        "id": int(os.environ.get("TEST_ADMIN_ID", 0))
     }
 
 
@@ -51,7 +52,7 @@ def basic_auth_client(admin_user) -> Generator[TestClient, Any, None]:
         # Build the JWT used by get_user_from_cookie / is_admin via login_token
         login_jwt = create_login_token(
             username=admin_user["username"],
-            user_id=0,  # user id isn't strictly needed for admin checks in tests
+            user_id=admin_user['id'],  # user id isn't strictly needed for admin checks in tests
             is_admin=True,
             session_id=session_id,
         )

@@ -6,7 +6,7 @@ from passlib.hash import bcrypt
 
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin,  get_user_from_cookie
+from userapp.api.routes.security import check_is_admin, get_user_from_cookie
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint
 from userapp.core.schemas.tokens import TokenGet, TokenGetFull, TokenPost, TokenTableSchema
 from userapp.core.models.tables import Token
@@ -15,7 +15,7 @@ from userapp.core.models.tables import Token
 router = APIRouter(
     prefix="/tokens",
     tags=["Token"],
-    dependencies=[],
+    dependencies=[Depends(check_is_admin)],
     responses={
         404: {
             "description": "Not found"
@@ -46,7 +46,7 @@ async def create_token(token: TokenPost, session=Depends(session_generator), use
 
     db_token = TokenTableSchema(
         **token.model_dump(exclude_unset=True),
-        created_by=4,
+        created_by=user_token.user_id,
         token=hashed_token
     )
 
