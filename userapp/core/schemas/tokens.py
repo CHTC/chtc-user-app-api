@@ -25,7 +25,7 @@ class TokenPost(BaseModel):
 class TokenGetFull(BaseModel):
 
     id: int
-    created_by: int
+    created_by: Optional[int]
     token: str
     description: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
@@ -33,7 +33,7 @@ class TokenGetFull(BaseModel):
 
 class TokenGet(BaseModel):
     id: int
-    created_by: int
+    created_by: Optional[int]
     description: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
     expires_at: Optional[datetime] = Field(default=None)

@@ -27,6 +27,15 @@ class TestTokens:
         assert "created_at" in data
         assert data["expires_at"] is None
 
+    def test_get_tokens(self, client: Client):
+        """Test get tokens"""
+
+        r = client.get("/tokens")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+
     def test_use_token_bad_ip_none(self, token_auth_client: Callable[[str], TestClient]):
         """Test using token to authenticate"""
 
