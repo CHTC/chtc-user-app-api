@@ -9,6 +9,8 @@ COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
 COPY userapp ./userapp
+COPY alembic.ini alembic.ini
+COPY alembic ./alembic
 
 ENV PYTHON_ENV=production
 
