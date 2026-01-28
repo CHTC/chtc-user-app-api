@@ -101,12 +101,19 @@ async def run_async_migrations() -> None:
 
             configuration["sqlalchemy.url"] = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        connect_args={"ssl": os.environ.get("PYTHON_ENV") == "production"}
-    )
+    if os.environ.get("PYTHON_ENV") == "production":
+        connectable = async_engine_from_config(
+            configuration,
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool
+        )
+    else:
+        connectable = async_engine_from_config(
+            configuration,
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+            connect_args={"ssl": False}
+        )
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
