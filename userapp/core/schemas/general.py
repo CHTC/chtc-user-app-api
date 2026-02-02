@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field
 
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
@@ -52,10 +52,21 @@ class JoinedProjectView(BaseModel):
     phone1: Optional[str] = Field(default=None)
     phone2: Optional[str] = Field(default=None)
     is_admin: Optional[bool] = Field(default=None)
-    auth_netid: Optional[bool] = Field(default=None)
-    auth_username: Optional[bool] = Field(default=None)
+    active: Optional[bool] = Field(default=None)
     date: Optional[datetime] = Field(default=None)
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
     role: Optional[RoleEnum] = Field(default=None)
     last_note_ticket: Optional[str] = Field(default=None)
+
+    @computed_field
+    @property
+    def auth_netid(self) -> Optional[bool]:
+        """Backwards compatibility: maps to active field"""
+        return self.active
+
+    @computed_field
+    @property
+    def auth_username(self) -> bool:
+        """Backwards compatibility: always returns False"""
+        return False
