@@ -5,6 +5,7 @@ from userapp.core.schemas.users import UserGet, UserPost, UserTableSchema
 from userapp.core.schemas.general import JoinedProjectView
 from userapp.core.models.enum import PositionEnum, RoleEnum
 
+# Mostly AI generated tests, looks decent though
 
 class TestUserGetComputedFields:
     """Tests for UserGet schema computed fields"""
@@ -160,6 +161,7 @@ class TestUserPostValidation:
             'password': 'SecurePassword123',
             'name': 'Test User',
             'email1': 'test@example.com',
+            'netid_exp_time': None,
         }
 
         user = UserPost(**user_data)
