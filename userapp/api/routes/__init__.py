@@ -5,8 +5,10 @@ from .security import router as security_router
 from .submit_nodes import router as submit_nodes_router
 from .users import router as users_router
 from .tokens import router as tokens_router
+from .routes import router as routes_router
 
 all_routers = [
+    routes_router,
     groups_router,
     pi_projects_router,
     projects_router,

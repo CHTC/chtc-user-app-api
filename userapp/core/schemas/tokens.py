@@ -4,6 +4,7 @@ from pydantic import AfterValidator, ConfigDict, Field
 from typing import Optional, Annotated
 
 from userapp.core.schemas.general import BaseModel
+from userapp.core.schemas.token_permission import TokenPermissionGet
 
 class TokenTableSchema(BaseModel):
     """Used to represent a group as stored in the database"""
@@ -31,9 +32,13 @@ class TokenGetFull(BaseModel):
     created_at: Optional[datetime] = Field(default=None)
     expires_at: Optional[datetime] = Field(default=None)
 
+    permissions: Optional[list['TokenPermissionGet']] = Field(default=None)
+
 class TokenGet(BaseModel):
     id: int
     created_by: Optional[int]
     description: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
     expires_at: Optional[datetime] = Field(default=None)
+
+
