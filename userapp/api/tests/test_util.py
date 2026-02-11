@@ -1,6 +1,6 @@
 import random
 
-from userapp.api.tests.main import basic_auth_client as client
+from userapp.api.tests.main import admin_client as client
 
 class TestListing:
 

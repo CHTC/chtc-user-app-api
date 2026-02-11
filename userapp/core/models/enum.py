@@ -12,3 +12,10 @@ class PositionEnum(Enum):
     GRAD_STUDENT = "GRAD_STUDENT"
     UNDERGRADUATE = "UNDERGRADUATE"
     OTHER = "OTHER"
+
+class HttpRequestMethodEnum(Enum):
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"

@@ -172,6 +172,13 @@ async def get_auth_from_api_token(request: Request, session=Depends(session_gene
 
     if not password_is_valid:
         return None
+
+    if token.expires_at is not None and token.expires_at < datetime.now():
+        return None
+
+    # Check the token has access to this route
+    if (request.method, request.scope.get('route').path) not in set([(p.method.value, p.route) for p in token.permissions]):
+        return None
     
     return ApiTokenData(token_id=token.id, is_admin=True)
 

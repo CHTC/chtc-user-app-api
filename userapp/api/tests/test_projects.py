@@ -1,13 +1,11 @@
 from userapp.core.models.enum import RoleEnum
-from userapp.api.tests.main import basic_auth_client as client, filled_out_project, project, user, admin_user, project_factory, user_factory
-
 
 class TestProjects:
 
-    def test_get_projects(self, client):
+    def test_get_projects(self, admin_client):
         """Test getting projects from the database"""
 
-        response = client.get("/projects")
+        response = admin_client.get("/projects")
 
         assert response.status_code == 200, "Getting projects should return a 200 status code"
 
@@ -15,7 +13,7 @@ class TestProjects:
 
         assert isinstance(data, list), "The returned data should be a list of projects"
 
-    def test_add_note(self, client, filled_out_project, admin_user):
+    def test_add_note(self, admin_client, filled_out_project, admin_user):
         """Test adding a note to the database"""
 
         note_data = {
@@ -24,7 +22,7 @@ class TestProjects:
             "users": [*map(lambda u: u['id'], filled_out_project['users'])]
         }
 
-        response = client.post(
+        response = admin_client.post(
             f"/projects/{filled_out_project['id']}/notes",
             json=note_data,
         )
@@ -38,7 +36,7 @@ class TestProjects:
         assert data['author'] == admin_user['username'], "The returned author does not match the identity of the requester"
         assert set(map(lambda x: x['id'], data['users'])) == set(note_data['users']), "The returned users do not match the input"
 
-    def test_get_notes(self, client, filled_out_project, admin_user):
+    def test_get_notes(self, admin_client, filled_out_project, admin_user):
         """Test getting notes from the database"""
 
         # Create the note
@@ -47,14 +45,14 @@ class TestProjects:
             "note": "This is a test note.",
             "users": [*map(lambda u: u['id'], filled_out_project['users'])]
         }
-        response = client.post(
+        response = admin_client.post(
             f"/projects/{filled_out_project['id']}/notes",
             json=note_data,
         )
         assert response.status_code == 201, "Adding a note should return a 201 status code"
 
         # Get the note
-        note_response = client.get(
+        note_response = admin_client.get(
             f"/projects/{filled_out_project['id']}/notes",
         )
         assert note_response.status_code == 200, f"Getting notes should return a 200 status code instead got {note_response.text}"
@@ -70,7 +68,7 @@ class TestProjects:
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
 
-    def test_get_single_note(self, client, filled_out_project):
+    def test_get_single_note(self, admin_client, filled_out_project):
         """Test getting a single note by ID"""
 
         # Create the note
@@ -79,7 +77,7 @@ class TestProjects:
             "note": "This is a test note.",
             "users": [*map(lambda u: u['id'], filled_out_project['users'])]
         }
-        response = client.post(
+        response = admin_client.post(
             f"/projects/{filled_out_project['id']}/notes",
             json=note_data,
         )
@@ -87,7 +85,7 @@ class TestProjects:
         created_note = response.json()
 
         # Get the note by ID
-        note_response = client.get(
+        note_response = admin_client.get(
             f"/projects/{filled_out_project['id']}/notes/{created_note['id']}",
         )
         assert note_response.status_code == 200, f"Getting a note by ID should return a 200 status code instead got {note_response.text}"
@@ -97,7 +95,7 @@ class TestProjects:
         assert note['note'] == note_data['note'], "The returned note does not match"
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
-    def test_update_note(self, client, filled_out_project):
+    def test_update_note(self, admin_client, filled_out_project):
         """Test updating a note"""
 
         # Create the note
@@ -106,7 +104,7 @@ class TestProjects:
             "note": "This is a test note.",
             "users": [*map(lambda u: u['id'], filled_out_project['users'])]
         }
-        response = client.post(
+        response = admin_client.post(
             f"/projects/{filled_out_project['id']}/notes",
             json=note_data,
         )
@@ -118,7 +116,7 @@ class TestProjects:
             "ticket": "TICKET14",
             "note": "This is an updated test note.",
         }
-        update_response = client.put(
+        update_response = admin_client.put(
             f"/projects/{filled_out_project['id']}/notes/{created_note['id']}",
             json=updated_note_data,
         )
@@ -128,10 +126,10 @@ class TestProjects:
         assert updated_note['ticket'] == updated_note_data['ticket'], "The updated ticket does not match"
         assert updated_note['note'] == updated_note_data['note'], "The updated note does not match"
 
-    def test_list_project_users(self, client, filled_out_project):
+    def test_list_project_users(self, admin_client, filled_out_project):
         """Test listing users in a project"""
 
-        response = client.get(
+        response = admin_client.get(
             f"/projects/{filled_out_project['id']}/users"
         )
         assert response.status_code == 200, f"Getting the project should return a 200 status code, instead got {response.text}"
@@ -140,11 +138,11 @@ class TestProjects:
         assert len(project_users) == 2, "There should be at least one user in the project"
 
 
-    def test_add_user_to_project(self, client, project, user):
+    def test_add_user_to_project(self, admin_client, project, user):
         """Test adding a user to a project"""
 
         # Add the user to the project
-        response = client.post(
+        response = admin_client.post(
             f"/projects/{project['id']}/users",
             json={
                 "user_id": user['id'],
@@ -155,7 +153,7 @@ class TestProjects:
         assert response.status_code == 201, f"Adding a user to a project should return a 201 status code, instead got {response.text}"
 
         # Verify the user is in the project
-        project_users_response = client.get(
+        project_users_response = admin_client.get(
             f"/projects/{project['id']}/users"
         )
         assert project_users_response.status_code == 200, f"Getting the project should return a 200 status code, instead got {project_users_response.text}"

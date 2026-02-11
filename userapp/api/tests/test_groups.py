@@ -1,7 +1,5 @@
 import random
 
-from userapp.api.tests.main import basic_auth_client as client, api_client as unauthed_client, admin_user
-
 group_data_f = lambda: {
     "name": f"test-group-{random.randint(0, 10000000)}",
     "point_of_contact": "test-contact",
@@ -11,23 +9,23 @@ group_data_f = lambda: {
 
 class TestGroups:
 
-    def test_needs_auth(self, unauthed_client):
+    def test_needs_auth(self, nonadmin_client):
         """Test that authentication is required to access group endpoints"""
 
-        response = unauthed_client.get("/groups")
+        response = nonadmin_client.get("/groups")
         assert response.status_code == 403, f"Getting groups without authentication should return a 401 status code. Got {response.content} instead."
 
         group_data = group_data_f()
-        response = unauthed_client.post(
+        response = nonadmin_client.post(
             "/groups",
             json=group_data,
         )
         assert response.status_code == 403, f"Adding a group without authentication should return a 401 status code. Got {response.content} instead."
 
-    def test_get_groups(self, client):
+    def test_get_groups(self, admin_client):
         """Test getting groups from the database"""
 
-        response = client.get("/groups")
+        response = admin_client.get("/groups")
 
         assert response.status_code == 200, f"Getting groups should return a 200 status code. Got {response.content} instead."
 
@@ -35,12 +33,12 @@ class TestGroups:
 
         assert isinstance(data, list), f"Getting groups should return a list. Got {response.content} instead."
 
-    def test_add_group(self, client):
+    def test_add_group(self, admin_client):
         """Test adding a group to the database"""
 
         group_data = group_data_f()
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=group_data,
         )
@@ -54,7 +52,7 @@ class TestGroups:
         assert data['unix_gid'] == group_data['unix_gid'], f"The returned unix_gid does not match the input. Got {response.content} instead."
         assert data['has_groupdir'] == group_data['has_groupdir'], f"The returned has_groupdir does not match the input. Got {response.content} instead."
 
-    def test_add_invalid_group_name_spaces(self, client):
+    def test_add_invalid_group_name_spaces(self, admin_client):
         """Test adding a group with an invalid name"""
 
         group_data = group_data_f()
@@ -64,14 +62,14 @@ class TestGroups:
             "name": "invalid group name with spaces!"
         }
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=new_group_data,
         )
 
         assert response.status_code == 422, f"Adding a group with an invalid name should return a 400 status code. Got {response.content} instead."
 
-    def test_add_invalid_group_name_special_chars(self, client):
+    def test_add_invalid_group_name_special_chars(self, admin_client):
         """Test adding a group with an invalid name"""
 
         group_data = group_data_f()
@@ -81,14 +79,14 @@ class TestGroups:
             "name": "invalid@group#name$"
         }
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=new_group_data,
         )
 
         assert response.status_code == 422, f"Adding a group with an invalid name should return a 400 status code. Got {response.content} instead."
 
-    def test_add_invalid_group_name_too_long(self, client):
+    def test_add_invalid_group_name_too_long(self, admin_client):
         """Test adding a group with an invalid name"""
 
         group_data = group_data_f()
@@ -98,19 +96,19 @@ class TestGroups:
             "name": "a" * 33
         }
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=new_group_data,
         )
 
         assert response.status_code == 422, f"Adding a group with an invalid name should return a 400 status code. Got {response.content} instead."
 
-    def test_add_duplicate_gid(self, client):
+    def test_add_duplicate_gid(self, admin_client):
         """Test adding a group with a duplicate unix_gid"""
 
         group_data = group_data_f()
 
-        group_response = client.get(
+        group_response = admin_client.get(
             "/groups?page_size=1"
         )
         group = group_response.json()[0]
@@ -121,19 +119,19 @@ class TestGroups:
             "unix_gid": group['unix_gid']
         }
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=new_group_data,
         )
 
         assert response.status_code == 400, f"Adding a group with a duplicate unix_gid should return a 400 status code. Got {response.content} instead."
 
-    def test_add_colliding_uid_gid(self, client):
+    def test_add_colliding_uid_gid(self, admin_client):
         """Test adding a group with a colliding unix_gid with an existing user"""
 
         group_data = group_data_f()
 
-        user_response = client.get("/users?page_size=1")
+        user_response = admin_client.get("/users?page_size=1")
         user = user_response.json()[0]
 
         new_group_data = {
@@ -141,14 +139,14 @@ class TestGroups:
             "unix_gid": user['unix_uid']
         }
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=new_group_data,
         )
 
         assert response.status_code == 400, f"Adding a group with a colliding unix_gid with an existing user should return a 400 status code. Got {response.content} instead."
 
-    def test_automatic_allocation_of_gid(self, client):
+    def test_automatic_allocation_of_gid(self, admin_client):
         """Test adding a group without specifying a unix_gid to check automatic allocation"""
 
         group_data = group_data_f()
@@ -156,7 +154,7 @@ class TestGroups:
         new_group_data = {**group_data}
         new_group_data.pop('unix_gid', None)
 
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=new_group_data,
         )
@@ -168,8 +166,8 @@ class TestGroups:
         assert 'unix_gid' in data, f"The returned group should have an automatically allocated unix_gid. Got {response.content} instead."
         assert isinstance(data['unix_gid'], int), f"The automatically allocated unix_gid should be an integer. Got {response.content} instead."
 
-    def test_update_groups_with_bad_data(self, client):
-        group_response = client.get(
+    def test_update_groups_with_bad_data(self, admin_client):
+        group_response = admin_client.get(
             "/groups?page_size=1"
         )
         group = group_response.json()[0]
@@ -181,30 +179,30 @@ class TestGroups:
             "unix_gid": 600001
         }
 
-        response = client.put(
+        response = admin_client.put(
             f"/groups/{group_id}",
             json=new_group_data,
         )
 
         assert response.status_code == 400, f"Updating a group with a out of bounds unix_gid should return a 400 status code. Got {response.content} instead."
 
-    def test_add_delete_user_to_group(self, client, admin_user):
+    def test_add_delete_user_to_group(self, admin_client, admin_user):
         """Test adding and deleting a user to/from a group"""
 
-        user_response = client.get(
+        user_response = admin_client.get(
             "/users?page_size=1"
         )
         user = user_response.json()[0]
         user_id = user.pop('id')
 
-        group_response = client.get(
+        group_response = admin_client.get(
             "/groups?page_size=1"
         )
         group = group_response.json()[0]
         group_id = group.pop('id')
 
         # Add user to group
-        response = client.post(
+        response = admin_client.post(
             f"/groups/{group_id}/users",
             json={
                 "id": user_id
@@ -213,29 +211,29 @@ class TestGroups:
         assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
 
         # Now, delete the user from the group
-        response = client.delete(
+        response = admin_client.delete(
             f"/groups/{group_id}/users/{user_id}"
         )
         assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
 
 
-    def test_get_group_users(self, client):
+    def test_get_group_users(self, admin_client):
         """Test getting users associated with a group"""
 
-        user_response = client.get(
+        user_response = admin_client.get(
             "/users?page_size=1000"
         )
         user = user_response.json()[0]
         user_id = user.pop('id')
 
-        group_response = client.get(
+        group_response = admin_client.get(
             "/groups?page_size=1000"
         )
         group = group_response.json()[0]
         group_id = group.pop('id')
 
         # Add user to group
-        response = client.post(
+        response = admin_client.post(
             f"/groups/{group_id}/users",
             json={
                 "id": user_id
@@ -243,51 +241,51 @@ class TestGroups:
         )
         assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
 
-        response = client.get(
+        response = admin_client.get(
             f"/groups/{group_id}/users"
         )
         assert response.status_code == 200, f"Getting users for a group should return a 200 status code. Got {response.content} instead."
 
         # Clean up by removing the user from the group, not essential for the test
-        response = client.delete(
+        response = admin_client.delete(
             f"/groups/{group_id}/users/{user_id}"
         )
         assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
 
 
-    def test_remove_nonexistent_user_from_group(self, client):
+    def test_remove_nonexistent_user_from_group(self, admin_client):
         """Test removing a user who is not associated with the group"""
 
-        group_response = client.get(
+        group_response = admin_client.get(
             "/groups?page_size=1"
         )
         group = group_response.json()[0]
         group_id = group.pop('id')
 
         # Attempt to remove a user with a high ID that likely doesn't exist
-        response = client.delete(
+        response = admin_client.delete(
             f"/groups/{group_id}/users/9999999"
         )
         assert response.status_code == 404, f"Removing a non-associated user should return a 404 status code. Got {response.content} instead."
 
 
-    def test_remove_user_from_group(self, client):
+    def test_remove_user_from_group(self, admin_client):
         """Test removing a user from a group"""
 
-        user_response = client.get(
+        user_response = admin_client.get(
             "/users"
         )
         user = user_response.json()[0]
         user_id = user.pop('id')
 
-        group_response = client.get(
+        group_response = admin_client.get(
             "/groups"
         )
         group = group_response.json()[0]
         group_id = group.pop('id')
 
         # Add user to group
-        response = client.post(
+        response = admin_client.post(
             f"/groups/{group_id}/users",
             json={
                 "id": user_id
@@ -296,18 +294,18 @@ class TestGroups:
         assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
 
         # Now, delete the user from the group
-        response = client.delete(
+        response = admin_client.delete(
             f"/groups/{group_id}/users/{user_id}"
         )
         assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
 
-    def test_delete_group(self, client):
+    def test_delete_group(self, admin_client):
         """Test deleting a group from the database"""
 
         group_data = group_data_f()
 
         # First, add a new group to ensure we have one to delete
-        response = client.post(
+        response = admin_client.post(
             "/groups",
             json=group_data,
         )
@@ -318,14 +316,14 @@ class TestGroups:
         group_id = data['id']
 
         # Now, delete the group
-        response = client.delete(
+        response = admin_client.delete(
             f"/groups/{group_id}"
         )
 
         assert response.status_code == 204, "Deleting a group should return a 200 status code"
 
         # Verify the group has been deleted
-        response = client.get(
+        response = admin_client.get(
             f"/groups/{group_id}"
         )
 

@@ -1,10 +1,11 @@
 from typing import List
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, Table
+from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
+    Table, Index
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
 
-from userapp.core.models.enum import RoleEnum, PositionEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum, HttpRequestMethodEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
@@ -62,6 +63,10 @@ class SubmitNode(Base):
 
 class User(Base):
     __tablename__ = 'users'
+    __table_args__ = (
+        UniqueConstraint('netid', name='uniq_netid_unique_if_not_null', postgresql_nulls_not_distinct=False),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(255), unique=True)
     name = Column(String(255), nullable=False)
@@ -160,6 +165,23 @@ class Token(Base):
     description = Column(String(255))
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
     expires_at = Column(TIMESTAMP)
+
+    permissions: Mapped[List["TokenPermission"]] = relationship(
+        "TokenPermission",
+        cascade="all, delete-orphan",
+        lazy="joined"
+    )
+
+class TokenPermission(Base):
+    __tablename__ = 'token_permissions'
+    __table_args__ = (
+        Index('ix_token_permissions_token_id', 'token_id'),
+        UniqueConstraint('token_id', 'method', 'route', name='token_permissions_distinct'),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    token_id = Column(Integer, ForeignKey('tokens.id', ondelete="CASCADE"), nullable=False)
+    method = Column(SQLEnum(HttpRequestMethodEnum, name="http_request_method_enum"), nullable=False)
+    route = Column(String(255), nullable=False)
 
 class Access(Base):
     __tablename__ = 'access'
