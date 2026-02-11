@@ -32,8 +32,6 @@ class TokenGetFull(BaseModel):
     created_at: Optional[datetime] = Field(default=None)
     expires_at: Optional[datetime] = Field(default=None)
 
-    permissions: Optional[list['TokenPermissionGet']] = Field(default=None)
-
 class TokenGet(BaseModel):
     id: int
     created_by: Optional[int]
@@ -41,4 +39,4 @@ class TokenGet(BaseModel):
     created_at: Optional[datetime] = Field(default=None)
     expires_at: Optional[datetime] = Field(default=None)
 
-
+    permissions: Optional[list['TokenPermissionGet']] = Field(default=None)

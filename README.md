@@ -1,11 +1,11 @@
 ## Release
 
 ```shell
-docker build --platform linux/amd64 -t hub.opensciencegrid.org/opensciencegrid/chtc-userapp-api:1.0.4 .
+docker build --platform linux/amd64 -t hub.opensciencegrid.org/opensciencegrid/chtc-userapp-api:token-permissions .
 ```
 
 ```shell
-docker push hub.opensciencegrid.org/opensciencegrid/chtc-userapp-api:1.0.4
+docker push hub.opensciencegrid.org/opensciencegrid/chtc-userapp-api:token-permissions
 ```
 
 ```shell

@@ -220,3 +220,28 @@ class TestTokens:
         )
 
         assert r.status_code == 201
+
+    def test_getting_tokens_permissions(self, token, admin_client: TestClient):
+        """Test getting a token's permissions"""
+
+        # First add a permission to ensure there is at least one
+        r = admin_client.post(
+            f"/tokens/{token['id']}/permissions",
+            json={
+                "route": "/users",
+                "method": "GET"
+            }
+        )
+        assert r.status_code == 201
+
+        r = admin_client.get(
+            f"/tokens/{token['id']}/permissions"
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+
+        for p in data:
+            assert p['token_id'] == token['id']

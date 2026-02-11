@@ -68,7 +68,7 @@ async def create_token(token: TokenPost, session=Depends(session_generator), use
 
 @router.get("/{token_id}/permissions")
 async def get_token_permissions(token_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[TokenPermissionGet]:
-    select_stmt = select(TokenPermission).where(Token.id == token_id)
+    select_stmt = select(TokenPermission).where(TokenPermission.token_id == token_id)
     return await list_select_stmt(session, select_stmt, Token, response, filter_query_params, page, page_size)
 
 @router.post("/{token_id}/permissions", status_code=201)

@@ -1,8 +1,8 @@
 """Add Token Scopes
 
-Revision ID: 0f45dc62e9ea
+Revision ID: cd61b41c6c55
 Revises: 1d68d572169d
-Create Date: 2026-02-10 08:26:20.010777
+Create Date: 2026-02-11 12:05:51.935780
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0f45dc62e9ea'
+revision: str = 'cd61b41c6c55'
 down_revision: Union[str, Sequence[str], None] = '1d68d572169d'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,7 +27,8 @@ def upgrade() -> None:
     sa.Column('method', sa.Enum('GET', 'POST', 'PUT', 'PATCH', 'DELETE', name='http_request_method_enum'), nullable=False),
     sa.Column('route', sa.String(length=255), nullable=False),
     sa.ForeignKeyConstraint(['token_id'], ['tokens.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('token_id', 'method', 'route', name='token_permissions_distinct')
     )
     op.create_index(op.f('ix_token_permissions_id'), 'token_permissions', ['id'], unique=False)
     op.create_index('ix_token_permissions_token_id', 'token_permissions', ['token_id'], unique=False)

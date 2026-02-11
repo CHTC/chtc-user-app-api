@@ -176,6 +176,7 @@ class TokenPermission(Base):
     __tablename__ = 'token_permissions'
     __table_args__ = (
         Index('ix_token_permissions_token_id', 'token_id'),
+        UniqueConstraint('token_id', 'method', 'route', name='token_permissions_distinct'),
     )
     id = Column(Integer, primary_key=True, index=True)
     token_id = Column(Integer, ForeignKey('tokens.id', ondelete="CASCADE"), nullable=False)
