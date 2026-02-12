@@ -4,16 +4,12 @@ from httpx import Client
 
 from userapp.api.tests.fake_data import user_data_f
 
-from userapp.api.tests.main import basic_auth_client as client, api_client, token, user_auth_client as user_client, \
-    admin_user, project, user_factory, project_factory, filled_out_project, token_auth_client, VALID_CIDR_RANGE, \
-    BLACK_IP, WHITE_IP
-
 # Mostly AI generated tests, looks decent though
 
 class TestActiveField:
     """Tests for the active field in user model"""
 
-    def test_create_user_with_active_true(self, client: Client, project_factory):
+    def test_create_user_with_active_true(self, admin_client: Client, project_factory):
         """Test creating a user with active=True and netid"""
         project = project_factory()
         user_payload = user_data_f(1, project['id'])
@@ -22,14 +18,14 @@ class TestActiveField:
         user_payload['active'] = True
         user_payload['netid'] = f"testnetid{random.randint(100000, 999999)}"
 
-        response = client.post("/users", json=user_payload)
+        response = admin_client.post("/users", json=user_payload)
 
         assert response.status_code == 201, f"Creating user with active=True should succeed, got {response.text}"
         created_user = response.json()
         assert created_user['active'] is True, "Created user should have active=True"
         assert created_user['netid'] == user_payload['netid'], "Created user should have the specified netid"
 
-    def test_create_user_with_active_false(self, client: Client, project_factory):
+    def test_create_user_with_active_false(self, admin_client: Client, project_factory):
         """Test creating a user with active=False"""
         project = project_factory()
         user_payload = user_data_f(2, project['id'])
@@ -37,13 +33,13 @@ class TestActiveField:
         # Set active to False
         user_payload['active'] = False
 
-        response = client.post("/users", json=user_payload)
+        response = admin_client.post("/users", json=user_payload)
 
         assert response.status_code == 201, f"Creating user with active=False should succeed, got {response.text}"
         created_user = response.json()
         assert created_user['active'] is False, "Created user should have active=False"
 
-    def test_create_user_with_active_true_no_netid_fails(self, client: Client, project_factory):
+    def test_create_user_with_active_true_no_netid_fails(self, admin_client: Client, project_factory):
         """Test that creating a user with active=True but no netid fails validation"""
         project = project_factory()
         user_payload = user_data_f(3, project['id'])
@@ -52,13 +48,13 @@ class TestActiveField:
         user_payload['active'] = True
         user_payload['netid'] = None
 
-        response = client.post("/users", json=user_payload)
+        response = admin_client.post("/users", json=user_payload)
 
         assert response.status_code == 422, f"Creating user with active=True and no netid should fail with 422, got {response.status_code}"
         error_detail = response.json()
         assert 'netid must be provided' in str(error_detail).lower(), "Error should mention netid requirement"
 
-    def test_update_user_active_field(self, client: Client, user_factory, project_factory):
+    def test_update_user_active_field(self, admin_client: Client, user_factory, project_factory):
         """Test updating a user's active field"""
         project = project_factory()
         user = user_factory(4, project['id'])
@@ -69,7 +65,7 @@ class TestActiveField:
             'netid': f"updatednetid{random.randint(100000, 999999)}"
         }
 
-        response = client.patch(f"/users/{user['id']}", json=update_payload)
+        response = admin_client.patch(f"/users/{user['id']}", json=update_payload)
 
         assert response.status_code == 200, f"Updating user active field should succeed, got {response.text}"
         updated_user = response.json()
@@ -80,7 +76,7 @@ class TestActiveField:
 class TestBackwardsCompatibility:
     """Tests for backwards compatibility computed fields"""
 
-    def test_get_user_includes_auth_netid_field(self, client: Client, user_factory, project_factory):
+    def test_get_user_includes_auth_netid_field(self, admin_client: Client, user_factory, project_factory):
         """Test that GET /users/{id} includes auth_netid computed field"""
         project = project_factory()
         user_payload = user_data_f(10, project['id'])
@@ -88,12 +84,12 @@ class TestBackwardsCompatibility:
         user_payload['netid'] = f"testnetid{random.randint(100000, 999999)}"
 
         # Create user
-        create_response = client.post("/users", json=user_payload)
+        create_response = admin_client.post("/users", json=user_payload)
         assert create_response.status_code == 201
         user_id = create_response.json()['id']
 
         # Get user
-        get_response = client.get(f"/users/{user_id}")
+        get_response = admin_client.get(f"/users/{user_id}")
         assert get_response.status_code == 200
 
         user_data = get_response.json()
@@ -108,19 +104,19 @@ class TestBackwardsCompatibility:
         # Check auth_username is always False
         assert user_data['auth_username'] is False, "auth_username should always be False"
 
-    def test_get_user_auth_netid_false_when_active_false(self, client: Client, user_factory, project_factory):
+    def test_get_user_auth_netid_false_when_active_false(self, admin_client: Client, user_factory, project_factory):
         """Test that auth_netid is False when active is False"""
         project = project_factory()
         user_payload = user_data_f(11, project['id'])
         user_payload['active'] = False
 
         # Create user
-        create_response = client.post("/users", json=user_payload)
+        create_response = admin_client.post("/users", json=user_payload)
         assert create_response.status_code == 201
         user_id = create_response.json()['id']
 
         # Get user
-        get_response = client.get(f"/users/{user_id}")
+        get_response = admin_client.get(f"/users/{user_id}")
         assert get_response.status_code == 200
 
         user_data = get_response.json()
@@ -129,7 +125,7 @@ class TestBackwardsCompatibility:
         assert user_data['active'] is False, "active should be False"
         assert user_data['auth_netid'] is False, "auth_netid should be False when active is False"
 
-    def test_list_users_includes_backwards_compat_fields(self, client: Client, user_factory, project_factory):
+    def test_list_users_includes_backwards_compat_fields(self, admin_client: Client, user_factory, project_factory):
         """Test that GET /users includes backwards compatibility fields for all users"""
         project = project_factory()
 
@@ -141,11 +137,11 @@ class TestBackwardsCompatibility:
         user2_payload = user_data_f(13, project['id'])
         user2_payload['active'] = False
 
-        client.post("/users", json=user1_payload)
-        client.post("/users", json=user2_payload)
+        admin_client.post("/users", json=user1_payload)
+        admin_client.post("/users", json=user2_payload)
 
         # List users
-        response = client.get("/users")
+        response = admin_client.get("/users")
         assert response.status_code == 200
 
         users_list = response.json()
@@ -158,13 +154,13 @@ class TestBackwardsCompatibility:
             assert user['auth_netid'] == user['active'], "auth_netid should match active"
             assert user['auth_username'] is False, "auth_username should always be False"
 
-    def test_get_user_projects_includes_backwards_compat_fields(self, client: Client, user_factory, project_factory):
+    def test_get_user_projects_includes_backwards_compat_fields(self, admin_client: Client, user_factory, project_factory):
         """Test that GET /users/{id}/projects includes backwards compatibility fields"""
         project = project_factory()
         user = user_factory(14, project['id'])
 
         # Get user projects (which returns JoinedProjectView)
-        response = client.get(f"/users/{user['id']}/projects")
+        response = admin_client.get(f"/users/{user['id']}/projects")
         assert response.status_code == 200
 
         projects = response.json()
@@ -181,7 +177,7 @@ class TestBackwardsCompatibility:
 class TestActiveFieldValidation:
     """Tests for active field validation logic"""
 
-    def test_active_field_defaults_to_false(self, client: Client, project_factory):
+    def test_active_field_defaults_to_false(self, admin_client: Client, project_factory):
         """Test that active field defaults to False when not specified"""
         project = project_factory()
         user_payload = user_data_f(20, project['id'])
@@ -190,7 +186,7 @@ class TestActiveFieldValidation:
         if 'active' in user_payload:
             del user_payload['active']
 
-        response = client.post("/users", json=user_payload)
+        response = admin_client.post("/users", json=user_payload)
 
         assert response.status_code == 201, f"Creating user should succeed, got {response.text}"
         created_user = response.json()
@@ -199,7 +195,7 @@ class TestActiveFieldValidation:
         assert created_user['active'] is False or created_user['active'] is None, \
             "Active field should default to False"
 
-    def test_patch_active_to_true_requires_netid(self, client: Client, user_factory, project_factory):
+    def test_patch_active_to_true_requires_netid(self, admin_client: Client, user_factory, project_factory):
         """Test that patching active to True requires netid to be set"""
         project = project_factory()
         user = user_factory(21, project['id'])
@@ -210,12 +206,12 @@ class TestActiveFieldValidation:
             'netid': None
         }
 
-        response = client.patch(f"/users/{user['id']}", json=update_payload)
+        response = admin_client.patch(f"/users/{user['id']}", json=update_payload)
 
         # This might succeed if the user already has a netid, so let's check
         # We need to ensure the user doesn't have a netid first
         # Get current user state
-        get_response = client.get(f"/users/{user['id']}")
+        get_response = admin_client.get(f"/users/{user['id']}")
         current_user = get_response.json()
 
         if current_user['netid'] is None:
@@ -224,7 +220,7 @@ class TestActiveFieldValidation:
             # So this test documents current behavior
             pass
 
-    def test_create_user_with_active_and_netid(self, client: Client, project_factory):
+    def test_create_user_with_active_and_netid(self, admin_client: Client, project_factory):
         """Test creating a user with both active=True and a netid succeeds"""
         project = project_factory()
         user_payload = user_data_f(22, project['id'])
@@ -233,7 +229,7 @@ class TestActiveFieldValidation:
         user_payload['active'] = True
         user_payload['netid'] = netid_value
 
-        response = client.post("/users", json=user_payload)
+        response = admin_client.post("/users", json=user_payload)
 
         assert response.status_code == 201, f"Creating user with active and netid should succeed, got {response.text}"
         created_user = response.json()
