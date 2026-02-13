@@ -19,13 +19,8 @@ class Relationship(BaseModel):
     """Used to post entities to groups by id"""
     id: int
 
-class Login(BaseModel):
-    username: str
-    password: str
-
 class PiProjectView(BaseModel):
     user_id: int
-    username: Optional[str] = Field(default=None)
     name: Optional[str] = Field(default=None)
     project_id: int
     project_name: str
@@ -43,7 +38,6 @@ class JoinedProjectView(BaseModel):
     project_last_contact: Optional[datetime] = Field(default=None)
     project_accounting_group: Optional[str] = Field(default=None)
     is_primary: Optional[bool] = Field(default=None)
-    username: Optional[str] = Field(default=None)
     name: str
     email1: EmailStr
     email2: Optional[EmailStr] = Field(default=None)

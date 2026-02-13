@@ -11,25 +11,11 @@ from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
 
-def user_password_validator(password: str) -> str | None:
-    if password is None:
-        return password
-    if len(password) < 12:
-        raise ValueError("Password must be at least 12 characters long.")
-    if not re.search(r'[A-Z]', password):
-        raise ValueError("Password must contain at least one uppercase letter.")
-    if not re.search(r'[a-z]', password):
-        raise ValueError("Password must contain at least one lowercase letter.")
-    if not re.search(r'[0-9]', password):
-        raise ValueError("Password must contain at least one digit.")
-    return password
-
-
 def user_name_validator(username: str | None) -> str | None:
     if username is None:
         return username
     if not re.fullmatch(r'[^:,]*', username):
-        raise ValueError("Username cannot contain the characters ':' or ','.")
+        raise ValueError("Name cannot contain the characters ':' or ','.")
     return username
 
 class UserTableSchema(BaseModel):
@@ -38,8 +24,6 @@ class UserTableSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     id: Optional[int] = Field(default=None)
-    username: Optional[str] = Field(default=None)
-    password: Optional[str] = Field(default=None)
     name: str
     email1: EmailStr
     email2: Optional[EmailStr] = Field(default=None)
@@ -63,7 +47,6 @@ class UserGet(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     id: Optional[int] = Field(default=None)
-    username: Optional[str] = Field(default=None)
     name: str
     email1: EmailStr
     email2: Optional[EmailStr] = Field(default=None)
@@ -102,8 +85,6 @@ class UserPost(BaseModel):
 
     model_config = ConfigDict(extra='ignore')
 
-    username: Annotated[Optional[str], AfterValidator(user_name_validator)] = Field(default=None)
-    password: Annotated[Optional[str], AfterValidator(user_password_validator)] = Field(default=None)
     name: str
     email1: EmailStr
     email2: Optional[EmailStr] = Field(default=None)
@@ -138,8 +119,6 @@ class UserPatch(BaseModel):
 
     model_config = ConfigDict(extra='ignore')
 
-    username: Optional[str] = Field(default=None)
-    password: Annotated[Optional[str], AfterValidator(user_password_validator)] = Field(default=None)
     name: Annotated[Optional[str], AfterValidator(user_name_validator)] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
@@ -170,4 +149,3 @@ class RestrictedUserPatch(BaseModel):
     email2: Optional[EmailStr] = Field(default=None)
     phone1: Optional[str] = Field(default=None)
     phone2: Optional[str] = Field(default=None)
-    password: Annotated[Optional[str], AfterValidator(user_password_validator)] = Field(default=None)

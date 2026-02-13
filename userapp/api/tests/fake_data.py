@@ -39,9 +39,7 @@ def user_data_f(index: int, primary_project_id, is_admin=False) -> dict:
     """
     rand = random.randint(100000, 999999)
     return {
-        "username": f"user_{index}_{rand}",
         "name": f"User {index}",
-        "password": f"Testpassword{rand}",
         "email1": f"testuser{rand}@example.com",
         "email2": f"altuser{rand}@example.com",
         "netid": f"netid{rand}",

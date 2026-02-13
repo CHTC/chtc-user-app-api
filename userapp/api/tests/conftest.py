@@ -30,8 +30,6 @@ def api_client() -> Generator[TestClient, Any, None]:
 @pytest.fixture
 def existing_admin_user() -> dict:
     return {
-        "username": os.environ.get("TEST_ADMIN_USERNAME", "admin"),
-        "password": os.environ.get("TEST_ADMIN_PASSWORD", "password"),
         "id": int(os.environ.get("TEST_ADMIN_ID", 0))
     }
 
@@ -41,7 +39,6 @@ def _make_auth_client(user: dict) -> Generator[TestClient, Any, None]:
         session_id = "test-session-admin"
 
         login_jwt = create_login_token(
-            username=user["username"],
             user_id=user["id"],
             is_admin=user.get("is_admin", False),
             session_id=session_id,
@@ -148,10 +145,7 @@ def user_factory(existing_admin_client: Client):
         )
         assert response.status_code == 201, f"Creating a user should return a 201 status code instead of {response.text}"
 
-        return {
-            **response.json(),
-            "password": user_payload["password"]
-        }
+        return response.json()
 
     return _create_user
 
@@ -178,10 +172,7 @@ def admin_user_factory(existing_admin_client: Client):
         )
         assert response.status_code == 201, f"Creating a user should return a 201 status code instead of {response.text}"
 
-        return {
-            **response.json(),
-            "password": user_payload["password"]
-        }
+        return response.json()
 
     return _create_admin_user
 

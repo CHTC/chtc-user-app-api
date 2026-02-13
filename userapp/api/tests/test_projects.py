@@ -33,7 +33,7 @@ class TestProjects:
 
         assert data['ticket'] == note_data['ticket'], "The returned ticket does not match the input"
         assert data['note'] == note_data['note'], "The returned note does not match the input"
-        assert data['author'] == admin_user['username'], "The returned author does not match the identity of the requester"
+        assert data['author'] == str(admin_user['id']), "The returned author does not match the identity of the requester"
         assert set(map(lambda x: x['id'], data['users'])) == set(note_data['users']), "The returned users do not match the input"
 
     def test_get_notes(self, admin_client, filled_out_project, admin_user):
@@ -64,7 +64,7 @@ class TestProjects:
         note = notes[0]
         assert note['ticket'] == note_data['ticket'], "The returned ticket does not match"
         assert note['note'] == note_data['note'], "The returned note does not match"
-        assert note['author'] == admin_user['username'], "The returned author does not match the identity of the requester"
+        assert note['author'] == str(admin_user['id']), "The returned author does not match the identity of the requester"
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
 
