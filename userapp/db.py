@@ -38,6 +38,7 @@ async def connect_engine(db_url: str) -> AsyncEngine:
         connect_args["ssl"] = False
 
     engine = create_async_engine(db_url, connect_args=connect_args)
+    return engine
 
 
 async def dispose_engine():

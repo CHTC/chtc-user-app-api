@@ -33,7 +33,7 @@ def project_data_f(
     }
 
 
-def user_data_f(index: int, primary_project_id) -> dict:
+def user_data_f(index: int, primary_project_id, is_admin=False) -> dict:
     """
     Generate a unique user payload for testing, based on the UserBase schema.
     """

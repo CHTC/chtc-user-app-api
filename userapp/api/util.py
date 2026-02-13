@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -73,8 +75,11 @@ async def create_one_endpoint(session, model: type[DeclarativeBase], item: T):
 
     db_item = model(**item.model_dump())
     session.add(db_item)
-    await session.flush()  # db_item.id is now available
-    await session.refresh(db_item)
+    try:
+        await session.flush()  # db_item.id is now available
+        await session.refresh(db_item)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Item not found") from e
     return db_item
 
 @with_db_error_handling
@@ -101,3 +106,10 @@ async def delete_one_endpoint(session, model: type[DeclarativeBase], model_id: U
         raise HTTPException(status_code=404, detail=f"Item not found")
     await session.delete(db_item)
     await session.flush()
+
+def route_method_lookup(routes, route, method):
+    for r in routes:
+        if r.path == route and method in r.methods:
+            return True
+
+    return False
