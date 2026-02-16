@@ -34,7 +34,7 @@ class TestUsers:
         assert response.status_code == 201, f"Creating a user should return a 201 status code, instead got {response.text}"
         created_user = response.json()
         for key in created_user:
-            if not key in ["id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups"]:
+            if key not in ["id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups", "auth_netid", "auth_username"]:
                 assert created_user[key] == user_payload[key], f"User {key} should match the payload"
 
         assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
