@@ -9,7 +9,7 @@ from starlette.testclient import TestClient
 
 load_dotenv()
 
-from userapp.main import app
+from userapp.main import create_app
 from userapp.api.routes.security import create_login_token
 from userapp.api.tests.fake_data import project_data_f, user_data_f
 
@@ -23,7 +23,7 @@ BLACK_IP = INVALID_CIDR_RANGE.split('/')[0]
 
 @pytest.fixture
 def api_client() -> Generator[TestClient, Any, None]:
-    with TestClient(app) as api_client:
+    with TestClient(create_app()) as api_client:
         yield api_client
 
 
@@ -37,7 +37,7 @@ def existing_admin_user() -> dict:
 
 
 def _make_auth_client(user: dict) -> Generator[TestClient, Any, None]:
-    with TestClient(app) as client:
+    with TestClient(create_app()) as client:
         session_id = "test-session-admin"
 
         login_jwt = create_login_token(
@@ -89,7 +89,7 @@ def token_client(token: dict) -> Callable[[str], TestClient]:
 
     def _make_client(ip: str = WHITE_IP) -> TestClient:
         # You can also make the port configurable if you need.
-        client = TestClient(app, client=(ip, 443))
+        client = TestClient(create_app(), client=(ip, 443))
         client.headers["Authorization"] = f"Bearer {token['token']}"
         return client
 
