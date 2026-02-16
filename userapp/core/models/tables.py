@@ -68,9 +68,7 @@ class User(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(255), unique=True)
     name = Column(String(255), nullable=False)
-    password = Column(String(255))
     email1 = Column(String(255), nullable=False)
     email2 = Column(String(255))
     netid = Column(String(255)) # Made unique via a Table constraint
@@ -78,8 +76,7 @@ class User(Base):
     phone1 = Column(String(255))
     phone2 = Column(String(255))
     is_admin = Column(Boolean, default=False)
-    auth_netid = Column(Boolean, default=False)
-    auth_username = Column(Boolean, default=False)
+    active = Column(Boolean, nullable=False, server_default='false')
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)

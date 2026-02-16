@@ -1,4 +1,4 @@
-from userapp.api.tests.main import admin_client as client, api_client as unauthed_client, admin_user
+from userapp.api.tests.conftest import admin_client as client, api_client as unauthed_client, admin_user
 
 
 class TestGroupsAI:

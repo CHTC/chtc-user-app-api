@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from starlette.responses import Response
-from passlib.hash import sha256_crypt
 
 from userapp.core.schemas.groups import GroupGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin, is_admin, is_user, verify_password, create_password_hash, \
-    check_is_user
+from userapp.api.routes.security import check_is_admin, is_admin, is_user, check_is_user
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
@@ -54,8 +52,6 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
 
     # Create the user
     user_data_only = UserTableSchema(**user.model_dump())
-    if user.password is not None:
-        user_data_only.password = create_password_hash(user.password)
     created_user = await create_one_endpoint(session, UserTable, user_data_only)
 
     # Create the project association
@@ -89,21 +85,12 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         user_update_schema = RestrictedUserPatch(
             **user.model_dump(exclude_unset=True)
         )
-
-        # If the password is being updated, double check they know it again, then hash it
-        if user_update_schema.password:
-            existing_user = await get_one_endpoint(session, UserTable, user_id)
-            if not verify_password(user.current_password, existing_user.password):
-                raise HTTPException(status_code=401, detail="Password doesn't match")
-
         return await update_one_endpoint(session, UserTable, user_id, user_update_schema)
 
     elif is_admin:
 
         # Update user
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
-        if user_data_only.password:
-            user_data_only.password = create_password_hash(user_data_only.password)
         updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only)
 
         # Update Submit Nodes

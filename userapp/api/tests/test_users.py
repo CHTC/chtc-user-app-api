@@ -34,7 +34,7 @@ class TestUsers:
         assert response.status_code == 201, f"Creating a user should return a 201 status code, instead got {response.text}"
         created_user = response.json()
         for key in created_user:
-            if not key in ["password", "id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups"]:  # Password is not returned in the response
+            if key not in ["id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups", "auth_netid", "auth_username"]:
                 assert created_user[key] == user_payload[key], f"User {key} should match the payload"
 
         assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
@@ -156,24 +156,6 @@ class TestUsers:
 
 
 
-    def test_update_user_password(self, admin_client: Client, user_factory, project_factory):
-
-        project = project_factory()
-        user = user_factory(10, project['id'])
-
-        pwd = "Karate1Karate1"
-        update_payload = {
-            "password": pwd
-        }
-        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
-
-        assert user_payload.status_code == 200, f"Updating a user password should return a 200 status code, instead got {user_payload.text}"
-
-        # Test login
-        response = admin_client.post("/login", json={"username": user['username'], "password": pwd})
-
-        assert response.status_code == 200, f"Logging in with updated password should return a 200 status code, instead got {response.text}"
-
     def test_nullify_email1(self, admin_client: Client, user_factory, project_factory):
 
         project = project_factory()
@@ -227,7 +209,6 @@ class TestUsers:
 
         update_payload = {
             "is_admin": True,
-            "username": "newusername",
             "name": "New Name"
         }
 
@@ -237,7 +218,6 @@ class TestUsers:
 
         updated_data = user_payload.json()
         assert updated_data['is_admin'] == False, "User should not be able to update is_admin field"
-        assert updated_data['username'] == user['username'], "User should not be able to update username field"
         assert updated_data['name'] == "New Name", "User should be able to update name field"
 
     def test_get_user_projects(self, admin_client: Client, user_factory, filled_out_project: dict):

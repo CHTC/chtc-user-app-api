@@ -9,7 +9,6 @@ class PiProjectView(Base):
     __tablename__ = 'pi_projects'
     __table_args__ = {'info': dict(is_view=True)}
     user_id = Column(Integer, primary_key=True)
-    username = Column(String(255))
     name = Column(String(255))
     project_id = Column(Integer, primary_key=True)
     project_name = Column(String(255))
@@ -30,7 +29,6 @@ class JoinedProjectView(Base):
     project_last_contact = Column(TIMESTAMP)
     project_accounting_group = Column(String(255))
     is_primary = Column(Boolean)
-    username = Column(String(255))
     name = Column(String(255))
     email1 = Column(String(255))
     email2 = Column(String(255))
@@ -39,8 +37,7 @@ class JoinedProjectView(Base):
     phone1 = Column(String(255))
     phone2 = Column(String(255))
     is_admin = Column(Boolean)
-    auth_netid = Column(Boolean)
-    auth_username = Column(Boolean)
+    active = Column(Boolean)
     date = Column(TIMESTAMP)
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"))
