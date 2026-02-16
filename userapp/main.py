@@ -28,7 +28,6 @@ class AppSettings(BaseSettings):
 
 settings = AppSettings()
 
-
 @asynccontextmanager
 async def setup_engine(a: FastAPI):
     """Return database client instance."""
@@ -36,39 +35,41 @@ async def setup_engine(a: FastAPI):
     if settings.DB_URL is None:
         settings.DB_URL = f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"  # Fix typo DB_name -> DB_NAME
 
-    await connect_engine(settings.DB_URL)
-    yield
-    await dispose_engine()
+    # assume connect_engine returns the engine instance
+    engine = await connect_engine(settings.DB_URL)
 
+    a.state.engine = engine
 
-app = FastAPI(
-    lifespan=setup_engine,
-    openapi_prefix="./",
-)
+    try:
+        yield
+    finally:
+        await dispose_engine(engine)
 
-@app.middleware("http")
-async def commit_db_session(request: Request, call_next):
-    """
-    Commit db_session before response is returned.
-    """
-    response = await call_next(request)
-    db_session = request.state._state.get("db_session")  # noqa
-    if db_session:
-        await db_session.commit()
-    return response
+def create_app() -> FastAPI:
 
-origins = [
-    "http://localhost:8000",
-    "http://localhost:3000",
-    "http://localhost:3000/",
-    "http://localhost:6006"
-]
+    app = FastAPI(
+        lifespan=setup_engine,
+        openapi_prefix="./",
+    )
 
-for router in all_routers:
-    app.include_router(router)
+    @app.middleware("http")
+    async def commit_db_session(request: Request, call_next):
+        """
+        Commit db_session before response is returned.
+        """
+        response = await call_next(request)
+        db_session = request.state._state.get("db_session")  # noqa
+        if db_session:
+            await db_session.commit()
+        return response
+
+    for router in all_routers:
+        app.include_router(router)
+
+    return app
 
 async def main():
-    config = uvicorn.Config("userapp.main:app", host="0.0.0.0", port=80, log_level="info")
+    config = uvicorn.Config("userapp.main:create_app", host="0.0.0.0", port=80, log_level="info", factory=True)
     server = uvicorn.Server(config)
     await server.serve()
 
