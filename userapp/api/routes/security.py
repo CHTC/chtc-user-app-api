@@ -15,7 +15,6 @@ from sqlalchemy.future import select
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
-from userapp.core.schemas.general import Login
 from userapp.core.models.tables import User as UserTable, Token
 from userapp.db import session_generator
 

@@ -1,4 +1,5 @@
 from functools import lru_cache
+import traceback
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -21,6 +22,10 @@ def with_db_error_handling(func):
             raise HTTPException(status_code=400, detail="Database error occurred, likely due to violation of constraints.")
         except ValidationError as e:
             raise HTTPException(status_code=500, detail=f"Data validation error: {str(e)}")
+        except Exception as e:
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
     return wrapper
 
 T = TypeVar("T", bound=BaseModel)
