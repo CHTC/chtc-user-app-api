@@ -127,6 +127,10 @@ class UserGroup(Base):
 
 class UserNote(Base):
     __tablename__ = 'user_notes'
+    __table_args__ = (
+        Index('idx_user_notes_userid_projectid_noteid', 'user_id', 'project_id', 'note_id'),
+        Index('idx_user_notes_userid_noteid_desc', 'user_id', 'note_id', postgresql_using='btree'),
+    )
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False)
     note_id = Column(Integer, ForeignKey('notes.id', ondelete="CASCADE"), nullable=False)
@@ -145,6 +149,11 @@ class UserProject(Base):
 
 class UserSubmit(Base):
     __tablename__ = 'user_submits'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),
+        Index('idx_user_submits_userid_submitnodeid_incl', 'user_id', 'submit_node_id',
+              postgresql_include=['disk_quota', 'hpc_diskquota', 'hpc_inodequota', 'hpc_joblimit', 'hpc_corelimit', 'hpc_fairshare']),
+    )
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False)
@@ -155,7 +164,6 @@ class UserSubmit(Base):
     hpc_joblimit = Column(Integer, nullable=False, default=10)
     hpc_corelimit = Column(Integer, nullable=False, default=720)
     hpc_fairshare = Column(Integer, nullable=False, default=100)
-    __table_args__ = (UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),)
 
 class Token(Base):
     __tablename__ = 'tokens'
