@@ -13,4 +13,4 @@ jobs:
     uses: osg-htc/build-push/.github/workflows/build-push.yaml@main
     secrets: inherit
     with:
-      image: 'hub.opensciencegrid.org/opensciencegrid/chtc-userapp-api'
+      image: 'hub.opensciencegrid.org/chtc/chtc-user-app-api'
