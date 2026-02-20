@@ -288,3 +288,18 @@ class TestUsers:
         groups = response.json()
         assert len(groups) == len(group_ids), f"User should belong to {len(group_ids)} groups"
         assert all(group['id'] in group_ids for group in groups), "User's groups should match the added groups"
+
+    def test_patch_user_doesnt_remove_submit_nodes(self, admin_client: Client, user, project):
+        """Test that patching a user without submit nodes does not remove existing submit nodes"""
+
+        # First, update the user with an empty submit nodes list
+        update_payload = {
+            "name": "Cool Name"
+        }
+
+        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user with empty submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        assert len(updated_data['submit_nodes']) > 0, "User's submit nodes should not be removed when patching with an empty list"

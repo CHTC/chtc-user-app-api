@@ -158,7 +158,7 @@ class UserPatch(BaseModel):
 
 class UserPatchFull(UserPatch):
 
-    submit_nodes: Optional[list[UserSubmitPost]] = Field(default=[])
+    submit_nodes: Optional[list[UserSubmitPost]] = Field(default=None)
 
 class RestrictedUserPatch(BaseModel):
     """Used to allow a user to self update limited information"""
