@@ -108,7 +108,7 @@ class User(Base):
         primaryjoin="User.id==UserNote.user_id",
         secondaryjoin="Note.id==UserNote.note_id",
         foreign_keys="[UserNote.user_id, UserNote.note_id]",
-        lazy="joined",
+        lazy="selectin",
         back_populates="users"
     )
 
@@ -131,7 +131,7 @@ class User(Base):
         primaryjoin="User.id==UserGroup.user_id",
         secondaryjoin="Group.id==UserGroup.group_id",
         foreign_keys="[UserGroup.user_id, UserGroup.group_id]",
-        lazy="joined",
+        lazy="selectin",
         backref="users"
     )
 

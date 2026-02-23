@@ -22,13 +22,6 @@ from userapp.core.models.tables import User as UserTable, UserProject, UserSubmi
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserMin': UserMin})
 
-# Load options for user endpoints to avoid N+1 queries when loading related data
-# note: this fixed some weird async issue?
-_user_load_options = [
-    selectinload(UserTable.notes).joinedload(NoteTable.author),
-    selectinload(UserTable.groups).joinedload(Group.point_of_contact_user),
-]
-
 router = APIRouter(
     prefix="/users",
     tags=["User"],
@@ -42,7 +35,7 @@ router = APIRouter(
 
 @router.get("")
 async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> list[UserGetFull]:
-    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=_user_load_options)
+    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size)
 
 
 @router.delete("/{user_id}", status_code=204)
@@ -52,7 +45,7 @@ async def delete_user(user_id: int, session=Depends(session_generator), check_is
 
 @router.get("/{user_id}")
 async def get_user(user_id: int, session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> UserGetFull:
-    return await get_one_endpoint(session, UserTable, user_id, load_options=_user_load_options)
+    return await get_one_endpoint(session, UserTable, user_id)
 
 
 @router.post("", status_code=201)

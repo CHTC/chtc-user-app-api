@@ -38,7 +38,7 @@ T = TypeVar("T", bound=BaseModel)
 
 
 @with_db_error_handling
-async def list_select_stmt(session, select_stmt: Select, model: type[DeclarativeBase], response: Response, filter_query_params, page: int = 0, page_size: int = 100, load_options=None):
+async def list_select_stmt(session, select_stmt: Select, model: type[DeclarativeBase], response: Response, filter_query_params, page: int = 0, page_size: int = 100):
     """Generic list endpoint generator"""
 
     query_parser = QueryParser(columns=model.__table__.c, query_params=filter_query_params)
@@ -47,9 +47,6 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
         .limit(page_size) \
         .offset(page_size * page) \
         .where(query_parser.where_expressions())
-
-    if load_options:
-        paginated_select_stmt = paginated_select_stmt.options(*load_options)
 
     if query_parser.get_order_by_columns() is not None and \
             query_parser.get_group_by_column() is None:
@@ -68,18 +65,16 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
     return [x[0] for x in results]
 
 
-async def list_endpoint(session, model: type[DeclarativeBase], response: Response, filter_query_params, page: int = 0, page_size: int = 100, load_options=None):
+async def list_endpoint(session, model: type[DeclarativeBase], response: Response, filter_query_params, page: int = 0, page_size: int = 100):
     """Generic list endpoint generator"""
-    return await list_select_stmt(select_stmt=select(model), model=model, response=response, filter_query_params=filter_query_params, page=page, page_size=page_size, session=session, load_options=load_options)
+    return await list_select_stmt(select_stmt=select(model), model=model, response=response, filter_query_params=filter_query_params, page=page, page_size=page_size, session=session)
 
 
 @with_db_error_handling
-async def get_one_endpoint(session, model: type[DeclarativeBase], model_id: Union[str, int], load_options=None):
+async def get_one_endpoint(session, model: type[DeclarativeBase], model_id: Union[str, int]):
     """Generic get one endpoint generator"""
 
     select_stmt = select(model).where(model.id == model_id)
-    if load_options:
-        select_stmt = select_stmt.options(*load_options)
     result = await session.scalar(select_stmt)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Item not found")
