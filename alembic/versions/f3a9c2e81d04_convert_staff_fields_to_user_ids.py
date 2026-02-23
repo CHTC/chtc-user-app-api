@@ -37,17 +37,14 @@ def upgrade() -> None:
 
     bind = op.get_bind()
 
-    # ------------------------------------------------------------------
-    # 1. Add new integer columns alongside the old string ones
-    # ------------------------------------------------------------------
+    # Add new integer columns alongside the old string ones
+
     op.add_column('groups',   sa.Column('point_of_contact_new', sa.Integer(), nullable=True))
     op.add_column('notes',    sa.Column('author_new',           sa.Integer(), nullable=True))
     op.add_column('projects', sa.Column('staff1_new',           sa.Integer(), nullable=True))
     op.add_column('projects', sa.Column('staff2_new',           sa.Integer(), nullable=True))
 
-    # ------------------------------------------------------------------
-    # 3. Populate new columns by resolving string values → user IDs
-    # ------------------------------------------------------------------
+    # Populate new columns by resolving string values → user IDs
 
     # groups.point_of_contact: match by username
     # temporary hack to avoid violating the chk_unix_gid_range constraint while updating the groups table
@@ -96,26 +93,20 @@ def upgrade() -> None:
     op.execute('DROP VIEW IF EXISTS joined_projects')
     op.execute('DROP VIEW IF EXISTS pi_projects')
 
-    # ------------------------------------------------------------------
-    # 5. Drop old string columns
-    # ------------------------------------------------------------------
+    # Drop old string columns
     op.drop_column('groups',   'point_of_contact')
     op.drop_column('notes',    'author')
     op.drop_column('projects', 'staff1')
     op.drop_column('projects', 'staff2')
 
-    # ------------------------------------------------------------------
-    # 6. Rename new columns to the canonical names
-    # ------------------------------------------------------------------
+    # Rename new columns to the canonical names
     op.alter_column('groups',   'point_of_contact_new', new_column_name='point_of_contact')
     op.alter_column('notes',    'author_new',           new_column_name='author')
     op.alter_column('projects', 'staff1_new',           new_column_name='staff1')
     op.alter_column('projects', 'staff2_new',           new_column_name='staff2')
 
-    # ------------------------------------------------------------------
-    # 7. Add foreign-key constraints (SET NULL on delete so removing a
-    #    user does not cascade-delete groups / notes / projects)
-    # ------------------------------------------------------------------
+    # Add foreign-key constraints (SET NULL on delete so removing a
+    # user does not cascade-delete groups / notes / projects)
     op.create_foreign_key(
         'fk_groups_point_of_contact', 'groups',   'users',
         ['point_of_contact'], ['id'], ondelete='SET NULL'
@@ -133,9 +124,7 @@ def upgrade() -> None:
         ['staff2'],           ['id'], ondelete='SET NULL'
     )
 
-    # ------------------------------------------------------------------
-    # 8. Recreate views (staff1/staff2 are now integers)
-    # ------------------------------------------------------------------
+    # Recreate views (staff1/staff2 are now integers)
     op.execute("""
         CREATE VIEW joined_projects AS
             SELECT

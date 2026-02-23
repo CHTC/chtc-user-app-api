@@ -65,6 +65,17 @@ class Project(Base):
     ticket = Column(Integer)
     last_contact = Column(TIMESTAMP)
 
+    staff1_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[staff1],
+        lazy="joined",
+    )
+    staff2_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[staff2],
+        lazy="joined",
+    )
+
 
 class SubmitNode(Base):
     __tablename__ = 'submit_nodes'

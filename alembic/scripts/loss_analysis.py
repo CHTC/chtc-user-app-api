@@ -94,17 +94,6 @@ def run(bind) -> None:
     """)).fetchall()
     _print_unmatched("projects.staff2", [r[0] for r in rows])
 
-    # print the project that has blin28 as project staff1
-    rows = bind.execute(sa.text("""
-        SELECT id, name
-        FROM projects
-        WHERE staff1 = 'blin28'
-    """)).fetchall()
-    if rows:
-        print("\n=== Projects with staff1='blin28' (will become NULL) ===\n")
-        for r in rows:
-            print(f"  - id={r[0]} name={r[1]!r}") 
-
     print("\n=== Done ===")
 
 

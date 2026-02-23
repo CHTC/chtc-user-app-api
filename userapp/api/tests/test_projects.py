@@ -1,4 +1,5 @@
 from userapp.core.models.enum import RoleEnum
+from userapp.api.tests.fake_data import project_data_f
 
 class TestProjects:
 
@@ -142,6 +143,33 @@ class TestProjects:
 
         assert len(project_users) == 2, "There should be at least one user in the project"
 
+
+    def test_create_project_with_staff(self, admin_client, user_factory, project_factory):
+        """Test that creating a project with staff1/staff2 returns UserMin objects"""
+
+        project = project_factory()
+        staff1 = user_factory(0, project['id'])
+        staff2 = user_factory(1, project['id'])
+
+        project_with_staff_data = project_data_f(staff1=staff1['id'], staff2=staff2['id'])
+        response = admin_client.post("/projects", json=project_with_staff_data)
+        assert response.status_code == 201, f"Creating a project with staff should return 201, got {response.text}"
+
+        data = response.json()
+
+        s1 = data['staff1']
+        assert s1 is not None, "staff1 should not be null"
+        assert s1['id'] == staff1['id'], "staff1 id does not match"
+        assert s1['name'] == staff1['name'], "staff1 name does not match"
+        assert s1['netid'] == staff1['netid'], "staff1 netid does not match"
+        assert 'is_admin' not in s1, "staff1 should not include is_admin"
+
+        s2 = data['staff2']
+        assert s2 is not None, "staff2 should not be null"
+        assert s2['id'] == staff2['id'], "staff2 id does not match"
+        assert s2['name'] == staff2['name'], "staff2 name does not match"
+        assert s2['netid'] == staff2['netid'], "staff2 netid does not match"
+        assert 'is_admin' not in s2, "staff2 should not include is_admin"
 
     def test_add_user_to_project(self, admin_client, project, user):
         """Test adding a user to a project"""

@@ -17,9 +17,9 @@ from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTabl
 from userapp.core.schemas.users import UserGet, UserMin
 
 # Rebuild fields that use forward references to avoid circular imports
-_note_types = {'UserMin': UserMin, 'UserGet': UserGet}
-NoteGet.model_rebuild(_types_namespace=_note_types)
-NoteGetFull.model_rebuild(_types_namespace=_note_types)
+NoteGet.model_rebuild(_types_namespace={'UserMin': UserMin, 'UserGet': UserGet})
+NoteGetFull.model_rebuild(_types_namespace={'UserMin': UserMin, 'UserGet': UserGet})
+ProjectGet.model_rebuild(_types_namespace={'UserMin': UserMin})
 
 router = APIRouter(
     prefix="/projects",

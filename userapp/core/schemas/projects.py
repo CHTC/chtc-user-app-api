@@ -24,7 +24,9 @@ class ProjectTableSchema(BaseModel):
     last_contact: Optional[datetime] = Field(default=None)
 
 class ProjectGet(ProjectTableSchema):
-    """Exact same as ProjectTableSchema for now, but kept separate for future changes"""
+
+    staff1: Optional["UserMin"] = Field(default=None, validation_alias='staff1_user')
+    staff2: Optional["UserMin"] = Field(default=None, validation_alias='staff2_user')
 
     @field_serializer('url')
     def serialize_url(self, url):
