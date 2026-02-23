@@ -91,10 +91,10 @@ class TestUsers:
         update_payload = {
             "submit_nodes": [
                 {
-                    "submit_node_id": 19
+                    "submit_node_id": 1
                 },
                 {
-                    "submit_node_id": 20
+                    "submit_node_id": 2
                 }
             ]
         }
@@ -105,7 +105,7 @@ class TestUsers:
 
         updated_data = user_payload.json()
         updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
-        expected_submit_node_ids = set([19, 20])
+        expected_submit_node_ids = set([1, 2])
         assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
 
     def test_update_users_submit_nodes_twice(self, admin_client: Client, user_factory, project_factory):
@@ -117,10 +117,10 @@ class TestUsers:
         update_payload = {
             "submit_nodes": [
                 {
-                    "submit_node_id": 19
+                    "submit_node_id": 1
                 },
                 {
-                    "submit_node_id": 20
+                    "submit_node_id": 2
                 }
             ]
         }
@@ -131,16 +131,13 @@ class TestUsers:
 
         updated_data = user_payload.json()
         updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
-        expected_submit_node_ids = set([19, 20])
+        expected_submit_node_ids = set([1, 2])
         assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
 
         update_payload = {
             "submit_nodes": [
                 {
-                    "submit_node_id": 1
-                },
-                {
-                    "submit_node_id": 20
+                    "submit_node_id": 2
                 }
             ]
         }
@@ -151,7 +148,7 @@ class TestUsers:
 
         updated_data = user_payload.json()
         updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
-        expected_submit_node_ids = set([1, 20])
+        expected_submit_node_ids = set([2])
         assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
 
 

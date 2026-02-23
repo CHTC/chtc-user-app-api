@@ -188,10 +188,10 @@ def admin_user(existing_admin_client: Client, project_factory: Callable, admin_u
 
 
 @pytest.fixture
-def token(existing_admin_client: Client) -> str:
+def token(admin_client: Client) -> str:
     """Fixture to create and yield an authentication token for a user."""
 
-    response = existing_admin_client.post(
+    response = admin_client.post(
         "/tokens",
         json={
             "description": "Test Token"
@@ -201,16 +201,16 @@ def token(existing_admin_client: Client) -> str:
     token = response.json()
 
     # Add some general access to the test token
-    add_permissions_response = existing_admin_client.post(f"/tokens/{token['id']}/permissions", json={
+    add_permissions_response = admin_client.post(f"/tokens/{token['id']}/permissions", json={
         "route": "/users",
         "method": "GET"
     })
     assert add_permissions_response.status_code == 201, f"Adding permissions to the token should return a 201 status code instead of {add_permissions_response.text}"
-    add_permissions_response = existing_admin_client.post(f"/tokens/{token['id']}/permissions", json={
+    add_permissions_response = admin_client.post(f"/tokens/{token['id']}/permissions", json={
         "route": "/tokens/{token_id}",
         "method": "GET"
     })
     assert add_permissions_response.status_code == 201, f"Adding permissions to the token should return a 201 status code instead of {add_permissions_response.text}"
 
     yield token
-    existing_admin_client.delete(f"/tokens/{token['id']}")
+    admin_client.delete(f"/tokens/{token['id']}")

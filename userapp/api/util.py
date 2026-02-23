@@ -1,5 +1,6 @@
 from functools import lru_cache
 import traceback
+import logging
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -13,12 +14,14 @@ from typing import TypeVar, Union
 
 from userapp.query_parser import QueryParser
 
+logger = logging.getLogger(__name__)
 
 def with_db_error_handling(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
         except (DBAPIError, IntegrityError) as e:
+            logger.error(f"Database error: {str(e)}")
             raise HTTPException(status_code=400, detail="Database error occurred, likely due to violation of constraints.")
         except ValidationError as e:
             raise HTTPException(status_code=500, detail=f"Data validation error: {str(e)}")

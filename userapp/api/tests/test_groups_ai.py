@@ -1,13 +1,15 @@
+import random
+
 from userapp.api.tests.conftest import admin_client as client, api_client as unauthed_client, admin_user
 
 
 class TestGroupsAI:
 
-    def test_filter_groups_by_name(self, client):
+    def test_filter_groups_by_name(self, client, user):
         group_data = {
-            "name": "ai-group-filter",
-            "point_of_contact": 0,
-            "unix_gid": 55561,
+            "name": f"ai-group-filter-{random.randint(100000, 999999)}",
+            "point_of_contact": user["id"],
+            "unix_gid": random.randint(56000, 59900),
             "has_groupdir": True
         }
         client.post("/groups", json=group_data)
@@ -30,10 +32,10 @@ class TestGroupsAI:
         data = response.json()
         assert len(data) <= 2, f"Pagination failed, got {len(data)} groups."
 
-    def test_automatic_gid_allocation(self, client):
+    def test_automatic_gid_allocation(self, client, user):
         group_data = {
-            "name": "ai-group-auto-gid",
-            "point_of_contact": 0,
+            "name": f"ai-group-auto-gid-{random.randint(100000, 999999)}",
+            "point_of_contact": user["id"],
             "has_groupdir": True
         }
         response = client.post("/groups", json=group_data)
@@ -43,9 +45,9 @@ class TestGroupsAI:
 
     def test_create_group_missing_optional_fields(self, client, user):
         group_data = {
-            "name": "ai-group-minimal",
+            "name": f"ai-group-minimal-{random.randint(100000, 999999)}",
             "point_of_contact": user["id"],
-            "unix_gid": 55580
+            "unix_gid": random.randint(56000, 59900)
         }
         response = client.post("/groups", json=group_data)
         assert response.status_code == 201
