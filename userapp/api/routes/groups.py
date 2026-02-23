@@ -12,7 +12,9 @@ from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoin
     delete_one_endpoint, with_db_error_handling
 from userapp.core.schemas.general import Relationship
 from userapp.core.schemas.groups import GroupGet, GroupPost, GroupPatch
-from userapp.core.schemas.users import UserGet
+from userapp.core.schemas.users import UserGet, UserMin
+
+GroupGet.model_rebuild(_types_namespace={'UserMin': UserMin})
 from userapp.core.models.tables import User as UserTable, Group as GroupTable, UserGroup
 
 

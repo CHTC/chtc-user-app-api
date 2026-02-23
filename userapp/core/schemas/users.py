@@ -18,6 +18,11 @@ def user_name_validator(username: str | None) -> str | None:
         raise ValueError("Name cannot contain the characters ':' or ','.")
     return username
 
+class UserMin(BaseModel):
+    id: int
+    name: str
+    netid: Optional[str] = Field(default=None)
+
 class UserTableSchema(BaseModel):
     """Used to represent a user as stored in the database"""
 
@@ -43,7 +48,6 @@ class UserTableSchema(BaseModel):
 
 
 class UserGet(BaseModel):
-
     model_config = ConfigDict(extra='ignore')
 
     id: Optional[int] = Field(default=None)

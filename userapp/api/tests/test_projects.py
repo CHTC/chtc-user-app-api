@@ -33,7 +33,9 @@ class TestProjects:
 
         assert data['ticket'] == note_data['ticket'], "The returned ticket does not match the input"
         assert data['note'] == note_data['note'], "The returned note does not match the input"
-        assert data['author'] == str(admin_user['id']), "The returned author does not match the identity of the requester"
+        assert data['author']['id'] == admin_user['id'], "The returned author does not match the identity of the requester"
+        assert data['author']['name'] == admin_user['name'], "The returned author name does not match"
+        assert data['author']['netid'] == admin_user['netid'], "The returned author netid does not match"
         assert set(map(lambda x: x['id'], data['users'])) == set(note_data['users']), "The returned users do not match the input"
 
     def test_get_notes(self, admin_client, filled_out_project, admin_user):
@@ -64,7 +66,10 @@ class TestProjects:
         note = notes[0]
         assert note['ticket'] == note_data['ticket'], "The returned ticket does not match"
         assert note['note'] == note_data['note'], "The returned note does not match"
-        assert note['author'] == str(admin_user['id']), "The returned author does not match the identity of the requester"
+        assert note['author']['id'] == admin_user['id'], "The returned author does not match the identity of the requester"
+        assert note['author']['name'] == admin_user['name'], "The returned author name does not match"
+        assert note['author']['netid'] == admin_user['netid'], "The returned author netid does not match"
+        assert 'is_admin' not in note['author'], "The returned author should not include is_admin field"
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
 

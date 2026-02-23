@@ -22,7 +22,7 @@ class NoteTableSchema(BaseModel):
 
     id: Optional[int] = Field(default=None)
     note: str
-    author: Optional[str] = Field(default=None)
+    author_id: Optional[int] = Field(default=None)
     ticket: Optional[str] = Field(default=None)
     date: Optional[datetime] = Field(default=None)
 
@@ -30,7 +30,7 @@ class NoteGet(BaseModel):
 
     id: int
     note: str
-    author: Optional[str] = Field(default=None)
+    author: Optional["UserMin"] = Field(default=None)
     ticket: Annotated[Optional[str], AfterValidator(note_ticket_validator)] = Field(default=None)
     date: Optional[datetime] = Field(default=None)
 

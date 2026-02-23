@@ -23,7 +23,7 @@ class GroupTableSchema(BaseModel):
     
     id: Optional[int] = Field(default=None)
     name: str
-    point_of_contact: Optional[str] = Field(default=None)
+    point_of_contact: Optional[int] = Field(default=None)
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: Optional[bool] = Field(default=None)
 
@@ -31,14 +31,14 @@ class GroupTableSchema(BaseModel):
 class GroupPost(BaseModel):
 
     name: Annotated[str, AfterValidator(group_name_validator)]
-    point_of_contact: Optional[str] = Field(default=None)
+    point_of_contact: Optional[int] = Field(default=None)
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: Optional[bool] = Field(default=None)
 
 class GroupPatch(BaseModel):
 
     name: Annotated[Optional[str], AfterValidator(group_name_validator)] = Field(default=None)
-    point_of_contact: Optional[str] = Field(default=None)
+    point_of_contact: Optional[int] = Field(default=None)
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: Optional[bool] = Field(default=None)
 
@@ -46,6 +46,6 @@ class GroupGet(BaseModel):
 
     id: int
     name: str
-    point_of_contact: Optional[str] = Field(default=None)
+    point_of_contact: Optional["UserMin"] = Field(default=None, validation_alias='point_of_contact_user')
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: bool

@@ -176,7 +176,7 @@ class TestBackwardsCompatibility:
 
 class TestActiveFieldValidation:
     """Tests for active field validation logic"""
-
+ 
     def test_active_field_defaults_to_false(self, admin_client: Client, project_factory):
         """Test that active field defaults to False when not specified"""
         project = project_factory()

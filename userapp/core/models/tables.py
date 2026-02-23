@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
     Table, Index
@@ -15,9 +15,15 @@ class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(VARCHAR(32), unique=True, nullable=False)
-    point_of_contact = Column(String(50))
+    point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
     unix_gid = Column(Integer, unique=True)
     has_groupdir = Column(Boolean, nullable=False, default=True)
+
+    point_of_contact_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[point_of_contact],
+        lazy="joined",
+    )
 
 
 class Note(Base):
@@ -25,10 +31,15 @@ class Note(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket = Column(String(9))
     note = Column(Text, nullable=False)
-    author = Column(String(255))
+    author_id = Column('author', Integer, ForeignKey('users.id', ondelete='SET NULL'))
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
     # Relationships
+    author: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[author_id],
+        lazy="selectin",
+    )
     users: Mapped[List["User"]] = relationship(
         secondary="user_notes",
         primaryjoin="Note.id==UserNote.note_id",
@@ -44,8 +55,8 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
     pi = Column(Integer)
-    staff1 = Column(String(255))
-    staff2 = Column(String(255))
+    staff1 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
+    staff2 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
     status = Column(String(255))
     access = Column(String(255))
     accounting_group = Column(String(255), nullable=False)

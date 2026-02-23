@@ -1,7 +1,7 @@
 """remove_username_and_password_from_users
 
 Revision ID: b8ae04f033ae
-Revises: a674e0eb726a
+Revises: f3a9c2e81d04
 Create Date: 2026-02-13 13:48:21.729485
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'b8ae04f033ae'
-down_revision: Union[str, Sequence[str], None] = 'a674e0eb726a'
+down_revision: Union[str, Sequence[str], None] = 'f3a9c2e81d04'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

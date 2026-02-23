@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload, joinedload
 from starlette.responses import Response
 
 from userapp.core.schemas.groups import GroupGet
@@ -9,17 +10,24 @@ from userapp.api.routes.security import check_is_admin, is_admin, is_user, check
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
-    RestrictedUserPatch, UserTableSchema, UserGetFull
+    RestrictedUserPatch, UserTableSchema, UserGetFull, UserMin
 from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema
 from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
     UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView
-from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup
+from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 
 # Rebuild field for those that would cause circular imports
-NoteGet.model_rebuild()
+NoteGet.model_rebuild(_types_namespace={'UserMin': UserMin})
+
+# Load options for user endpoints to avoid N+1 queries when loading related data
+# note: this fixed some weird async issue?
+_user_load_options = [
+    selectinload(UserTable.notes).joinedload(NoteTable.author),
+    selectinload(UserTable.groups).joinedload(Group.point_of_contact_user),
+]
 
 router = APIRouter(
     prefix="/users",
@@ -34,7 +42,7 @@ router = APIRouter(
 
 @router.get("")
 async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> list[UserGetFull]:
-    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size)
+    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=_user_load_options)
 
 
 @router.delete("/{user_id}", status_code=204)
@@ -44,7 +52,7 @@ async def delete_user(user_id: int, session=Depends(session_generator), check_is
 
 @router.get("/{user_id}")
 async def get_user(user_id: int, session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> UserGetFull:
-    return await get_one_endpoint(session, UserTable, user_id)
+    return await get_one_endpoint(session, UserTable, user_id, load_options=_user_load_options)
 
 
 @router.post("", status_code=201)

@@ -13,8 +13,8 @@ class ProjectTableSchema(BaseModel):
     id:  Optional[int] = Field(default=None)
     name: str
     pi: Optional[int] = Field(default=None)
-    staff1: Optional[str] = Field(default=None)
-    staff2: Optional[str] = Field(default=None)
+    staff1: Optional[int] = Field(default=None)
+    staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
     access: Optional[str] = Field(default=None)
     accounting_group: str
@@ -34,8 +34,8 @@ class ProjectPost(BaseModel):
 
     name: str
     pi: Optional[int] = Field(default=None)
-    staff1: Optional[str] = Field(default=None)
-    staff2: Optional[str] = Field(default=None)
+    staff1: Optional[int] = Field(default=None)
+    staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
     access: Optional[str] = Field(default=None)
     accounting_group: str
@@ -51,8 +51,8 @@ class ProjectPatch(BaseModel):
 
     name: Optional[str] = Field(default=None)
     pi: Optional[int] = Field(default=None)
-    staff1: Optional[str] = Field(default=None)
-    staff2: Optional[str] = Field(default=None)
+    staff1: Optional[int] = Field(default=None)
+    staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
     access: Optional[str] = Field(default=None)
     accounting_group: Optional[str] = Field(default=None)

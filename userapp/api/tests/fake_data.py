@@ -8,8 +8,8 @@ from userapp.core.models.enum import RoleEnum, PositionEnum
 def project_data_f(
     name: Optional[str] = None,
     pi: Optional[int] = None,
-    staff1: Optional[str] = None,
-    staff2: Optional[str] = None,
+    staff1: Optional[int] = None,
+    staff2: Optional[int] = None,
     status: Optional[str] = None,
     access: Optional[str] = None,
     accounting_group: Optional[str] = None,
