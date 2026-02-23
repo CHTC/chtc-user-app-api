@@ -1,3 +1,5 @@
+import random
+
 from userapp.api.tests.fake_data import project_data_f
 
 
@@ -47,7 +49,7 @@ class TestUserForeignKeys:
         """Getting a group with a point_of_contact returns a proper UserMin object"""
 
         group_data = {
-            "name": "test-group-poc-format",
+            "name": f"test-group-poc-format-{random.randint(1, 10000)}",
             "point_of_contact": user["id"],
             "has_groupdir": False,
         }
@@ -87,3 +89,94 @@ class TestUserForeignKeys:
         project_data = get_response.json()
         _assert_user_min(project_data["staff1"], staff1, "project.staff1")
         _assert_user_min(project_data["staff2"], staff2, "project.staff2")
+
+    def test_update_note_author_format(self, admin_client, filled_out_project, admin_user):
+        """Updating a note returns an author field that is a proper UserMin object"""
+
+        note_data = {
+            "ticket": "TICKET02",
+            "note": "Original note content.",
+            "users": [u["id"] for u in filled_out_project["users"]],
+        }
+        create_response = admin_client.post(
+            f"/projects/{filled_out_project['id']}/notes",
+            json=note_data,
+        )
+        assert create_response.status_code == 201, (
+            f"Creating a note should return 201, got {create_response.text}"
+        )
+        note_id = create_response.json()["id"]
+
+        updated_note_data = {
+            "ticket": "TICKET02",
+            "note": "Updated note content.",
+            "users": [u["id"] for u in filled_out_project["users"]],
+        }
+        update_response = admin_client.put(
+            f"/projects/{filled_out_project['id']}/notes/{note_id}",
+            json=updated_note_data,
+        )
+        assert update_response.status_code == 200, (
+            f"Updating a note should return 200, got {update_response.text}"
+        )
+
+        note = update_response.json()
+        assert note["note"] == updated_note_data["note"], "Updated note content does not match"
+        _assert_user_min(note["author"], admin_user, "note.author")
+
+    def test_update_group_point_of_contact_format(self, admin_client, user_factory, project_factory):
+        """Updating a group's point_of_contact returns a proper UserMin object"""
+
+        project = project_factory()
+        original_poc = user_factory(0, project["id"])
+        new_poc = user_factory(1, project["id"])
+
+        group_data = {
+            "name": f"test-group-poc-update-{random.randint(1, 10000)}",
+            "point_of_contact": original_poc["id"],
+            "has_groupdir": False,
+        }
+        create_response = admin_client.post("/groups", json=group_data)
+        assert create_response.status_code == 201, (
+            f"Creating a group should return 201, got {create_response.text}"
+        )
+        group_id = create_response.json()["id"]
+
+        update_response = admin_client.put(
+            f"/groups/{group_id}",
+            json={"point_of_contact": new_poc["id"]},
+        )
+        assert update_response.status_code == 200, (
+            f"Updating a group should return 200, got {update_response.text}"
+        )
+
+        group = update_response.json()
+        _assert_user_min(group["point_of_contact"], new_poc, "group.point_of_contact")
+
+    def test_update_project_staff_format(self, admin_client, user_factory, project_factory):
+        """Updating a project's staff1/staff2 returns proper UserMin objects"""
+
+        project = project_factory()
+        original_staff1 = user_factory(0, project["id"])
+        original_staff2 = user_factory(1, project["id"])
+        new_staff1 = user_factory(2, project["id"])
+        new_staff2 = user_factory(3, project["id"])
+
+        project_data = project_data_f(staff1=original_staff1["id"], staff2=original_staff2["id"])
+        create_response = admin_client.post("/projects", json=project_data)
+        assert create_response.status_code == 201, (
+            f"Creating a project should return 201, got {create_response.text}"
+        )
+        project_id = create_response.json()["id"]
+
+        update_response = admin_client.put(
+            f"/projects/{project_id}",
+            json={"staff1": new_staff1["id"], "staff2": new_staff2["id"]},
+        )
+        assert update_response.status_code == 200, (
+            f"Updating a project should return 200, got {update_response.text}"
+        )
+
+        updated_project = update_response.json()
+        _assert_user_min(updated_project["staff1"], new_staff1, "project.staff1")
+        _assert_user_min(updated_project["staff2"], new_staff2, "project.staff2")
