@@ -11,13 +11,6 @@ from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
 
-def user_name_validator(username: str | None) -> str | None:
-    if username is None:
-        return username
-    if not re.fullmatch(r'[^:,]*', username):
-        raise ValueError("Name cannot contain the characters ':' or ','.")
-    return username
-
 class UserMin(BaseModel):
     id: int
     name: str
@@ -123,7 +116,7 @@ class UserPatch(BaseModel):
 
     model_config = ConfigDict(extra='ignore')
 
-    name: Annotated[Optional[str], AfterValidator(user_name_validator)] = Field(default=None)
+    name: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
