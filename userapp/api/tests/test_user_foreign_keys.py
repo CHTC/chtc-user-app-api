@@ -3,23 +3,22 @@ import random
 from userapp.api.tests.fake_data import project_data_f
 
 
-USER_MIN_FIELDS = {"id", "name", "netid"}
-
-
-def _assert_user_min(obj, expected_user, label):
+def _assert_user(obj, expected_user, label):
     assert obj is not None, f"{label} should not be null"
-    assert set(obj.keys()) == USER_MIN_FIELDS, (
-        f"{label} should have exactly fields {USER_MIN_FIELDS}, got {set(obj.keys())}"
-    )
     assert obj["id"] == expected_user["id"], f"{label} id does not match"
     assert obj["name"] == expected_user["name"], f"{label} name does not match"
     assert obj["netid"] == expected_user["netid"], f"{label} netid does not match"
+    assert obj["email1"] == expected_user["email1"], f"{label} email1 does not match"
+    assert obj["email2"] == expected_user["email2"], f"{label} email2 does not match"
+    assert obj["phone1"] == expected_user["phone1"], f"{label} phone1 does not match"
+    assert obj["phone2"] == expected_user["phone2"], f"{label} phone2 does not match"
+    assert obj["is_admin"] == expected_user["is_admin"], f"{label} is_admin does not match"
 
 
 class TestUserForeignKeys:
 
     def test_note_author_format(self, admin_client, filled_out_project, admin_user):
-        """Getting a note returns an author field that is a proper UserMin object"""
+        """Getting a note returns an author field"""
 
         note_data = {
             "ticket": "TICKET01",
@@ -43,10 +42,10 @@ class TestUserForeignKeys:
         )
 
         note = get_response.json()
-        _assert_user_min(note["author"], admin_user, "note.author")
+        _assert_user(note["author"], admin_user, "note.author")
 
     def test_group_point_of_contact_format(self, admin_client, user):
-        """Getting a group with a point_of_contact returns a proper UserMin object"""
+        """Getting a group with a point_of_contact returns a proper UserGet object"""
 
         group_data = {
             "name": f"test-group-poc-format-{random.randint(1, 10000)}",
@@ -65,10 +64,10 @@ class TestUserForeignKeys:
         )
 
         group = get_response.json()
-        _assert_user_min(group["point_of_contact"], user, "group.point_of_contact")
+        _assert_user(group["point_of_contact"], user, "group.point_of_contact")
 
     def test_project_staff_format(self, admin_client, user_factory, project_factory):
-        """Getting a project with staff1/staff2 returns proper UserMin objects"""
+        """Getting a project with staff1/staff2 returns proper UserGet objects"""
 
         project = project_factory()
         staff1 = user_factory(0, project["id"])
@@ -87,11 +86,11 @@ class TestUserForeignKeys:
         )
 
         project_data = get_response.json()
-        _assert_user_min(project_data["staff1"], staff1, "project.staff1")
-        _assert_user_min(project_data["staff2"], staff2, "project.staff2")
+        _assert_user(project_data["staff1"], staff1, "project.staff1")
+        _assert_user(project_data["staff2"], staff2, "project.staff2")
 
     def test_update_note_author_format(self, admin_client, filled_out_project, admin_user):
-        """Updating a note returns an author field that is a proper UserMin object"""
+        """Updating a note returns an author field with a proper UserGet object"""
 
         note_data = {
             "ticket": "TICKET02",
@@ -122,10 +121,10 @@ class TestUserForeignKeys:
 
         note = update_response.json()
         assert note["note"] == updated_note_data["note"], "Updated note content does not match"
-        _assert_user_min(note["author"], admin_user, "note.author")
+        _assert_user(note["author"], admin_user, "note.author")
 
     def test_update_group_point_of_contact_format(self, admin_client, user_factory, project_factory):
-        """Updating a group's point_of_contact returns a proper UserMin object"""
+        """Updating a group's point_of_contact returns a proper UserGet object"""
 
         project = project_factory()
         original_poc = user_factory(0, project["id"])
@@ -151,10 +150,10 @@ class TestUserForeignKeys:
         )
 
         group = update_response.json()
-        _assert_user_min(group["point_of_contact"], new_poc, "group.point_of_contact")
+        _assert_user(group["point_of_contact"], new_poc, "group.point_of_contact")
 
     def test_update_project_staff_format(self, admin_client, user_factory, project_factory):
-        """Updating a project's staff1/staff2 returns proper UserMin objects"""
+        """Updating a project's staff1/staff2 returns proper UserGet objects"""
 
         project = project_factory()
         original_staff1 = user_factory(0, project["id"])
@@ -178,5 +177,5 @@ class TestUserForeignKeys:
         )
 
         updated_project = update_response.json()
-        _assert_user_min(updated_project["staff1"], new_staff1, "project.staff1")
-        _assert_user_min(updated_project["staff2"], new_staff2, "project.staff2")
+        _assert_user(updated_project["staff1"], new_staff1, "project.staff1")
+        _assert_user(updated_project["staff2"], new_staff2, "project.staff2")

@@ -10,7 +10,7 @@ from userapp.api.routes.security import check_is_admin, is_admin, is_user, check
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
-    RestrictedUserPatch, UserTableSchema, UserGetFull, UserMin
+    RestrictedUserPatch, UserTableSchema, UserGetFull
 from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema
 from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
@@ -20,7 +20,7 @@ from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTabl
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 
 # Rebuild field for those that would cause circular imports
-NoteGet.model_rebuild(_types_namespace={'UserMin': UserMin})
+NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/users",

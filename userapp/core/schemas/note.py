@@ -30,7 +30,7 @@ class NoteGet(BaseModel):
 
     id: int
     note: str
-    author: Optional["UserMin"] = Field(default=None)
+    author: Optional["UserGet"] = Field(default=None)
     ticket: Annotated[Optional[str], AfterValidator(note_ticket_validator)] = Field(default=None)
     date: Optional[datetime] = Field(default=None)
 

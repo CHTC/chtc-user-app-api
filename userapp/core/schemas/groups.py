@@ -46,6 +46,6 @@ class GroupGet(BaseModel):
 
     id: int
     name: str
-    point_of_contact: Optional["UserMin"] = Field(default=None, validation_alias='point_of_contact_user')
+    point_of_contact: Optional["UserGet"] = Field(default=None, validation_alias='point_of_contact_user')
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: bool

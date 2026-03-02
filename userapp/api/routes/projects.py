@@ -14,12 +14,12 @@ from userapp.core.schemas.note import NoteGet, NoteTableSchema, NotePost, NoteGe
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema
 from userapp.core.models.tables import Project as ProjectTable, Note as NoteTable, UserNote, User, UserProject
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable
-from userapp.core.schemas.users import UserGet, UserMin
+from userapp.core.schemas.users import UserGet
 
 # Rebuild fields that use forward references to avoid circular imports
-NoteGet.model_rebuild(_types_namespace={'UserMin': UserMin, 'UserGet': UserGet})
-NoteGetFull.model_rebuild(_types_namespace={'UserMin': UserMin, 'UserGet': UserGet})
-ProjectGet.model_rebuild(_types_namespace={'UserMin': UserMin})
+NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+NoteGetFull.model_rebuild(_types_namespace={'UserGet': UserGet})
+ProjectGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/projects",

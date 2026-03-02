@@ -25,8 +25,8 @@ class ProjectTableSchema(BaseModel):
 
 class ProjectGet(ProjectTableSchema):
 
-    staff1: Optional["UserMin"] = Field(default=None, validation_alias='staff1_user')
-    staff2: Optional["UserMin"] = Field(default=None, validation_alias='staff2_user')
+    staff1: Optional["UserGet"] = Field(default=None, validation_alias='staff1_user')
+    staff2: Optional["UserGet"] = Field(default=None, validation_alias='staff2_user')
 
     @field_serializer('url')
     def serialize_url(self, url):

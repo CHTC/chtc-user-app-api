@@ -173,7 +173,7 @@ class TestGroups:
         group = group_response.json()[0]
         group_id = group.pop('id')
 
-        # point_of_contact is now a UserMin object; extract just the id for the PUT body
+        # point_of_contact is now a UserGet object; extract just the id for the PUT body
         poc = group.get('point_of_contact')
         new_group_data = {
             **group,
@@ -189,7 +189,7 @@ class TestGroups:
         assert response.status_code == 400, f"Updating a group with a out of bounds unix_gid should return a 400 status code. Got {response.content} instead."
 
     def test_add_group_with_point_of_contact(self, admin_client, user):
-        """Test that creating a group with a point_of_contact returns a UserMin object"""
+        """Test that creating a group with a point_of_contact returns a UserGet object"""
 
         group_data = group_data_f()
         group_data['point_of_contact'] = user['id']
@@ -204,7 +204,7 @@ class TestGroups:
         assert poc['id'] == user['id'], "The returned point_of_contact id does not match the input user"
         assert poc['name'] == user['name'], "The returned point_of_contact name does not match"
         assert poc['netid'] == user['netid'], "The returned point_of_contact netid does not match"
-        assert 'is_admin' not in poc, "The returned point_of_contact should not include is_admin field"
+        assert poc['is_admin'] == user['is_admin'], "The returned point_of_contact is_admin does not match"
 
     def test_add_delete_user_to_group(self, admin_client, admin_user):
         """Test adding and deleting a user to/from a group"""

@@ -70,7 +70,7 @@ class TestProjects:
         assert note['author']['id'] == admin_user['id'], "The returned author does not match the identity of the requester"
         assert note['author']['name'] == admin_user['name'], "The returned author name does not match"
         assert note['author']['netid'] == admin_user['netid'], "The returned author netid does not match"
-        assert 'is_admin' not in note['author'], "The returned author should not include is_admin field"
+        assert note['author']['is_admin'] == admin_user['is_admin'], "The returned author is_admin does not match"
         assert set(map(lambda x: x['id'], note['users'])) == set(note_data['users']), "The returned users do not match"
 
 
@@ -145,7 +145,7 @@ class TestProjects:
 
 
     def test_create_project_with_staff(self, admin_client, user_factory, project_factory):
-        """Test that creating a project with staff1/staff2 returns UserMin objects"""
+        """Test that creating a project with staff1/staff2 returns UserGet objects"""
 
         project = project_factory()
         staff1 = user_factory(0, project['id'])
@@ -162,14 +162,14 @@ class TestProjects:
         assert s1['id'] == staff1['id'], "staff1 id does not match"
         assert s1['name'] == staff1['name'], "staff1 name does not match"
         assert s1['netid'] == staff1['netid'], "staff1 netid does not match"
-        assert 'is_admin' not in s1, "staff1 should not include is_admin"
+        assert s1['is_admin'] == staff1['is_admin'], "staff1 is_admin does not match"
 
         s2 = data['staff2']
         assert s2 is not None, "staff2 should not be null"
         assert s2['id'] == staff2['id'], "staff2 id does not match"
         assert s2['name'] == staff2['name'], "staff2 name does not match"
         assert s2['netid'] == staff2['netid'], "staff2 netid does not match"
-        assert 'is_admin' not in s2, "staff2 should not include is_admin"
+        assert s2['is_admin'] == staff2['is_admin'], "staff2 is_admin does not match"
 
     def test_add_user_to_project(self, admin_client, project, user):
         """Test adding a user to a project"""

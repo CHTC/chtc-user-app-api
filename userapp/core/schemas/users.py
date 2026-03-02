@@ -11,11 +11,6 @@ from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
 
-class UserMin(BaseModel):
-    id: int
-    name: str
-    netid: Optional[str] = Field(default=None)
-
 class UserTableSchema(BaseModel):
     """Used to represent a user as stored in the database"""
 
