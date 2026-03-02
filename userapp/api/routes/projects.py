@@ -20,6 +20,7 @@ from userapp.core.schemas.users import UserGet
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 NoteGetFull.model_rebuild(_types_namespace={'UserGet': UserGet})
 ProjectGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/projects",

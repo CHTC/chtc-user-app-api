@@ -1,5 +1,8 @@
+from typing import Optional
+
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import Mapped, relationship
 
 from userapp.core.models.enum import RoleEnum, PositionEnum
 from userapp.core.models.main import Base
@@ -26,6 +29,19 @@ class JoinedProjectView(Base):
     project_staff1 = Column(Integer)
     project_staff2 = Column(Integer)
     project_status = Column(String(255))
+
+    staff1_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="JoinedProjectView.project_staff1==foreign(User.id)",
+        lazy="joined",
+        viewonly=True,
+    )
+    staff2_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="JoinedProjectView.project_staff2==foreign(User.id)",
+        lazy="joined",
+        viewonly=True,
+    )
     project_last_contact = Column(TIMESTAMP)
     project_accounting_group = Column(String(255))
     is_primary = Column(Boolean)

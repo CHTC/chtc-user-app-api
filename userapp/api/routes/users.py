@@ -21,6 +21,7 @@ from userapp.core.models.tables import User as UserTable, UserProject, UserSubmi
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/users",
