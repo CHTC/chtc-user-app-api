@@ -38,7 +38,7 @@ class Note(Base):
     author: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[author_id],
-        lazy="selectin",
+        lazy="joined",
     )
     users: Mapped[List["User"]] = relationship(
         secondary="user_notes",
