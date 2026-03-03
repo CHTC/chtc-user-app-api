@@ -44,6 +44,7 @@ class TestUsers:
 
         project = project_factory()
         user = user_factory(5, project['id'])
+        user = user_factory(5, project['id'])
 
         user_response = admin_client.get(f"/users/{user['id']}")
 
