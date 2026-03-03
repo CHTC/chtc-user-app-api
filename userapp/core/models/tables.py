@@ -22,7 +22,7 @@ class Group(Base):
     point_of_contact_user: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[point_of_contact],
-        lazy="joined",
+        lazy="selectin",
     )
 
 
@@ -38,14 +38,14 @@ class Note(Base):
     author: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[author_id],
-        lazy="joined",
+        lazy="selectin",
     )
     users: Mapped[List["User"]] = relationship(
         secondary="user_notes",
         primaryjoin="Note.id==UserNote.note_id",
         secondaryjoin="User.id==UserNote.user_id",
         foreign_keys="[UserNote.note_id, UserNote.user_id]",
-        lazy="joined",
+        lazy="selectin",
         back_populates="notes"
     )
 
@@ -68,12 +68,12 @@ class Project(Base):
     staff1_user: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[staff1],
-        lazy="joined",
+        lazy="selectin",
     )
     staff2_user: Mapped[Optional["User"]] = relationship(
         "User",
         foreign_keys=[staff2],
-        lazy="joined",
+        lazy="selectin",
     )
 
 
@@ -115,14 +115,14 @@ class User(Base):
     submit_nodes: Mapped[List[UserSubmitNodesView]] = relationship(
         "UserSubmitNodesView",
         primaryjoin="User.id==foreign(UserSubmitNodesView.user_id)",
-        lazy="joined",
+        lazy="selectin",
         viewonly=True,
     )
 
     projects: Mapped[List["JoinedProjectView"]] = relationship(
         "JoinedProjectView",
         primaryjoin="User.id==foreign(JoinedProjectView.id)",
-        lazy="joined",
+        lazy="selectin",
         viewonly=True,
     )
 
@@ -188,7 +188,7 @@ class Token(Base):
     permissions: Mapped[List["TokenPermission"]] = relationship(
         "TokenPermission",
         cascade="all, delete-orphan",
-        lazy="joined"
+        lazy="selectin"
     )
 
 class TokenPermission(Base):
