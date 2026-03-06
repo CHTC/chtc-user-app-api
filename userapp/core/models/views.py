@@ -33,13 +33,13 @@ class JoinedProjectView(Base):
     staff1_user: Mapped[Optional["User"]] = relationship(
         "User",
         primaryjoin="JoinedProjectView.project_staff1==foreign(User.id)",
-        lazy="joined",
+        lazy="selectin",
         viewonly=True,
     )
     staff2_user: Mapped[Optional["User"]] = relationship(
         "User",
         primaryjoin="JoinedProjectView.project_staff2==foreign(User.id)",
-        lazy="joined",
+        lazy="selectin",
         viewonly=True,
     )
     project_last_contact = Column(TIMESTAMP)

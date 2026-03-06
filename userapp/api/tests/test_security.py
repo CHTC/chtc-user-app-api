@@ -56,3 +56,11 @@ class TestSecurity:
 
         test_ip_invalid = "128.114.55.10"
         assert check_ip_in_whitelist(test_ip_invalid, ip_whitelist_string) == False
+
+    def test_ipv6_whitelist(self):
+        """Test that IPv6 whitelist works correctly"""
+
+        ip_whitelist_string = "2607:f388:2200:80::/5"
+
+        test_ip_valid = "2607:f388:2200:b5:3415:b18:62e8:82bc"
+        assert check_ip_in_whitelist(test_ip_valid, ip_whitelist_string) == True

@@ -30,7 +30,7 @@ def api_client() -> Generator[TestClient, Any, None]:
 @pytest.fixture
 def existing_admin_user() -> dict:
     return {
-        "id": int(os.environ.get("TEST_ADMIN_ID", 0))
+        "id": int(os.environ.get("TEST_ADMIN_ID", 4))
     }
 
 
@@ -94,13 +94,15 @@ def token_client(token: dict) -> Callable[[str], TestClient]:
 
 
 @pytest.fixture
-def project_factory(existing_admin_client: Client):
+def project_factory(existing_admin_client: Client) -> Callable[[str], TestClient]:
     """Fixture to create projects on demand in tests."""
 
     def _create_project() -> dict:
+
+        admin_user_response = existing_admin_client.get("/me").json()
         project_response = existing_admin_client.post(
             "/projects",
-            json=project_data_f()
+            json=project_data_f(staff1=admin_user_response['user_id'])
         )
         assert project_response.status_code == 201, f"Creating a project should return a 201 status code, instead got {project_response.text}"
         return project_response.json()

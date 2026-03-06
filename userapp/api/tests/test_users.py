@@ -44,6 +44,7 @@ class TestUsers:
 
         project = project_factory()
         user = user_factory(5, project['id'])
+        user = user_factory(5, project['id'])
 
         user_response = admin_client.get(f"/users/{user['id']}")
 
@@ -265,3 +266,33 @@ class TestUsers:
         groups = response.json()
         assert len(groups) == len(group_ids), f"User should belong to {len(group_ids)} groups"
         assert all(group['id'] in group_ids for group in groups), "User's groups should match the added groups"
+
+    def test_get_user_by_netid(self, admin_client: Client, user_factory, project_factory):
+        """Test getting a user by netid"""
+
+        project = project_factory()
+        user = user_factory(5001, project['id'])
+
+        response = admin_client.get(f"/users?netid=eq.{user['netid']}")
+
+        assert response.status_code == 200, f"Getting a user by netid should return a 200 status code, instead got {response.text}"
+        users = response.json()
+        assert len(users) == 1, "Should return exactly one user"
+        fetched_user = users[0]
+        assert fetched_user['id'] == user['id'], "Fetched user ID should match the created user ID"
+        assert fetched_user['name'] == user['name'], "Fetched user name should match the created user name"
+
+    def test_patch_user_doesnt_remove_submit_nodes(self, admin_client: Client, user, project):
+        """Test that patching a user without submit nodes does not remove existing submit nodes"""
+
+        # First, update the user with an empty submit nodes list
+        update_payload = {
+            "name": "Cool Name"
+        }
+
+        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user with empty submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        assert len(updated_data['submit_nodes']) > 0, "User's submit nodes should not be removed when patching with an empty list"
