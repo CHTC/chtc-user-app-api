@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import Optional
 import asyncio
+import json
 
 import uvicorn
 from fastapi import FastAPI
@@ -8,6 +9,8 @@ from pydantic_settings import BaseSettings
 from starlette.requests import Request
 
 from userapp.api.routes import all_routers
+from userapp.core.models.enum import HttpRequestMethodEnum
+from userapp.core.models.tables import Access
 from userapp.db import (
     connect_engine,
     dispose_engine
@@ -51,6 +54,37 @@ def create_app() -> FastAPI:
         lifespan=setup_engine,
         openapi_prefix="./",
     )
+
+    @app.middleware("http")
+    async def log_access(request: Request, call_next):
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return await call_next(request)
+
+        body_bytes = await request.body()
+        try:
+            body = json.loads(body_bytes) if body_bytes else {}
+        except (json.JSONDecodeError, ValueError):
+            # There should be no endpoint that accepts non-JSON body, but in case there is, we just log the raw body as a string
+            body = {"raw_body": body_bytes.decode("utf-8", errors="replace")}
+
+        response = await call_next(request)
+
+        db_session = request.state._state.get("db_session")
+        route = request.scope.get("route")
+        if db_session and route:
+            user_token = request.state._state.get("user_token")
+            api_token = request.state._state.get("api_token")
+            query_string = str(request.url.query) or None
+            access = Access(
+                user_id=user_token.user_id if user_token else None,
+                token_id=api_token.token_id if api_token else None,
+                method=HttpRequestMethodEnum(request.method),
+                route=route.path,
+                query_string=query_string,
+                payload=body,
+            )
+            db_session.add(access)
+        return response
 
     @app.middleware("http")
     async def commit_db_session(request: Request, call_next):
