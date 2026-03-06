@@ -30,7 +30,7 @@ def api_client() -> Generator[TestClient, Any, None]:
 @pytest.fixture
 def existing_admin_user() -> dict:
     return {
-        "id": int(os.environ.get("TEST_ADMIN_ID", 0))
+        "id": int(os.environ.get("TEST_ADMIN_ID", 4))
     }
 
 
