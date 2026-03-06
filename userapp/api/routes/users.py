@@ -109,33 +109,34 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
         updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=_user_load_options)
 
-        # Update Submit Nodes
-        for existing_submit_node in updated_user.submit_nodes:
-            if existing_submit_node.submit_node_id not in [sn.submit_node_id for sn in user.submit_nodes]:
+        # Update Submit Nodes if patched
+        if user.submit_nodes is not None:
+            for existing_submit_node in updated_user.submit_nodes:
+                if existing_submit_node.submit_node_id not in [sn.submit_node_id for sn in user.submit_nodes]:
 
-                # I blame the lack of uniformity on the previous db design
-                delete_stmt = (
-                    UserSubmit.__table__.delete()
-                    .where(UserSubmit.user_id == user_id)
-                    .where(UserSubmit.submit_node_id == existing_submit_node.submit_node_id)
-                )
-                await session.execute(delete_stmt)
+                    # I blame the lack of uniformity on the previous db design
+                    delete_stmt = (
+                        UserSubmit.__table__.delete()
+                        .where(UserSubmit.user_id == user_id)
+                        .where(UserSubmit.submit_node_id == existing_submit_node.submit_node_id)
+                    )
+                    await session.execute(delete_stmt)
 
-        # Add Submit Nodes from the update
-        for submit_node in user.submit_nodes:
+            # Add Submit Nodes from the update
+            for submit_node in user.submit_nodes:
 
-            if submit_node.submit_node_id in [sn.submit_node_id for sn in updated_user.submit_nodes]:
-                continue  # Already exists
+                if submit_node.submit_node_id in [sn.submit_node_id for sn in updated_user.submit_nodes]:
+                    continue  # Already exists
 
-            # Create nodes for both auth_netid True and False to simplify logic
-            for for_auth_netid in [True, False]:
+                # Create nodes for both auth_netid True and False to simplify logic
+                for for_auth_netid in [True, False]:
 
-                user_submit_model = UserSubmitTableSchema(
-                    user_id=user_id,
-                    for_auth_netid=for_auth_netid,
-                    **submit_node.model_dump(),
-                )
-                await create_one_endpoint(session, UserSubmit, user_submit_model)
+                    user_submit_model = UserSubmitTableSchema(
+                        user_id=user_id,
+                        for_auth_netid=for_auth_netid,
+                        **submit_node.model_dump(),
+                    )
+                    await create_one_endpoint(session, UserSubmit, user_submit_model)
 
         # Expire the instance to force a fresh load from the database
         session.expire(updated_user)
