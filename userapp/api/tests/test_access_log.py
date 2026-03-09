@@ -10,7 +10,9 @@ def get_access_logs(client: Client, created_at_after: datetime) -> list[dict]:
     params = { "created_at": f"gt.{created_at_after.timestamp()}" }
     response = client.get("/access_logs", params=params)
     assert response.status_code == 200
-    return response.json()
+    logs = response.json()
+    logs.sort(key=lambda log: log["created_at"], reverse=True)
+    return logs
 
 
 class TestAccessLog:
