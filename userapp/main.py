@@ -13,7 +13,8 @@ from userapp.core.models.enum import HttpRequestMethodEnum
 from userapp.core.models.tables import Access
 from userapp.db import (
     connect_engine,
-    dispose_engine
+    dispose_engine,
+    get_async_session,
 )
 
 
@@ -69,11 +70,11 @@ def create_app() -> FastAPI:
 
         response = await call_next(request)
 
-        db_session = request.state._state.get("db_session")
         route = request.scope.get("route")
-        if db_session and route:
-            user_token = request.state._state.get("user_token")
-            api_token = request.state._state.get("api_token")
+        user_token = request.state._state.get("user_token")
+        api_token = request.state._state.get("api_token")
+
+        if route:
             query_string = str(request.url.query) or None
             access = Access(
                 user_id=user_token.user_id if user_token else None,
@@ -82,19 +83,12 @@ def create_app() -> FastAPI:
                 route=route.path,
                 query_string=query_string,
                 payload=body,
+                status=response.status_code,
             )
-            db_session.add(access)
-        return response
-
-    @app.middleware("http")
-    async def commit_db_session(request: Request, call_next):
-        """
-        Commit db_session before response is returned.
-        """
-        response = await call_next(request)
-        db_session = request.state._state.get("db_session")  # noqa
-        if db_session:
-            await db_session.commit()
+            async_session_maker = get_async_session(request)
+            async with async_session_maker() as session:
+                session.add(access)
+                await session.commit()
         return response
 
     for router in all_routers:

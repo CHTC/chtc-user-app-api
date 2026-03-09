@@ -220,4 +220,5 @@ class Access(Base):
     route = Column(String(255), nullable=False)
     query_string = Column(String(2048), nullable=True)
     payload = Column(postgresql.JSONB, nullable=False)
+    status = Column(Integer, nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())

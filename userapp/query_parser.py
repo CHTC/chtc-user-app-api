@@ -6,8 +6,9 @@
 
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Union
+from typing import Any, Union
 
 from multidict import MultiDict
 import starlette.requests
@@ -41,6 +42,11 @@ def cast_to_column_type(column: Column, value):
         if column.type.python_type == bool:
             return value.lower() == "true"
 
+        # If the column is a datetime, then cast the value to a datetime from a unix timestamp
+        if column.type.python_type == datetime:
+            # The database uses timezone-naive datetimes in UTC
+            return datetime.fromtimestamp(float(value), tz=timezone.utc).replace(tzinfo=None)
+
         return column.type.python_type(value)
     except Exception:
         raise ParserException(
@@ -58,7 +64,7 @@ def cast_to_column_type(column: Column, value):
 class QueryParameter:
     column: Union[Column, str]
     operators: list[str]
-    value: str
+    value: Any
 
     def __str__(self):
         return f"{self.column} {self.operators} {self.value}"
