@@ -12,6 +12,6 @@ class AccessGet(BaseModel):
     method: HttpRequestMethodEnum
     route: str
     query_string: Optional[str]
-    payload: Any
+    payload: Optional[dict]
     status: int
     created_at: datetime

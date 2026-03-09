@@ -86,3 +86,14 @@ class TestAccessLog:
         logs = get_access_logs(existing_admin_client, created_at_after=start_time)
         assert len(logs) >= 1, "Should have at least one access log"
         assert logs[0]["status"] == 201, f"Status should be 201 for successful creation, got {logs[0]['status']}"
+    
+    def test_raw_body_stored_for_non_json(self, existing_admin_client):
+        """If a non-JSON body is sent, the raw body should be stored in the payload"""
+
+        start_time = datetime.now(timezone.utc)
+        raw_body = "This is not JSON"
+        existing_admin_client.post("/groups", content=raw_body, headers={"Content-Type": "text/plain"})
+
+        logs = get_access_logs(existing_admin_client, created_at_after=start_time)
+        assert len(logs) >= 1, "Should have at least one access log"
+        assert logs[0]["payload"]["raw_body"] == raw_body, "Raw body should be stored in payload for non-JSON requests"

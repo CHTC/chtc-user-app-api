@@ -24,8 +24,9 @@ def upgrade() -> None:
     op.alter_column('access', 'payload',
                existing_type=sa.VARCHAR(length=255),
                type_=postgresql.JSONB(astext_type=sa.Text()),
-               existing_nullable=False,
-               postgresql_using='payload::jsonb')
+               nullable=True,
+               existing_nullable=True,
+               postgresql_using="payload::jsonb")
     op.drop_column('access', 'expires_at')
     op.add_column('access', sa.Column('method', sa.Enum('GET', 'POST', 'PUT', 'PATCH', 'DELETE', name='http_request_method_enum', create_type=False), nullable=False))
     op.add_column('access', sa.Column('query_string', sa.String(length=2048), nullable=True))
@@ -43,5 +44,6 @@ def downgrade() -> None:
     op.alter_column('access', 'payload',
                existing_type=postgresql.JSONB(astext_type=sa.Text()),
                type_=sa.VARCHAR(length=255),
-               existing_nullable=False)
+               nullable=True,
+               existing_nullable=True)
     # ### end Alembic commands ###

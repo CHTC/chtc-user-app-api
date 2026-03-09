@@ -63,16 +63,15 @@ def create_app() -> FastAPI:
 
         body_bytes = await request.body()
         try:
-            body = json.loads(body_bytes) if body_bytes else {}
+            body = json.loads(body_bytes) if body_bytes else None
         except (json.JSONDecodeError, ValueError):
-            # There should be no endpoint that accepts non-JSON body, but in case there is, we just log the raw body as a string
             body = {"raw_body": body_bytes.decode("utf-8", errors="replace")}
 
         response = await call_next(request)
 
         route = request.scope.get("route")
-        user_token = request.state._state.get("user_token")
-        api_token = request.state._state.get("api_token")
+        user_token = getattr(request.state, "user_token", None)
+        api_token = getattr(request.state, "api_token", None)
 
         if route:
             query_string = str(request.url.query) or None

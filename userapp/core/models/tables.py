@@ -219,6 +219,6 @@ class Access(Base):
     method = Column(SQLEnum(HttpRequestMethodEnum, name="http_request_method_enum"), nullable=False)
     route = Column(String(255), nullable=False)
     query_string = Column(String(2048), nullable=True)
-    payload = Column(postgresql.JSONB, nullable=False)
+    payload = Column(postgresql.JSONB, nullable=True)
     status = Column(Integer, nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
