@@ -4,7 +4,7 @@ import asyncio
 import json
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from pydantic_settings import BaseSettings
 from starlette.requests import Request
 
@@ -57,10 +57,22 @@ def create_app() -> FastAPI:
     )
 
     @app.middleware("http")
+    async def commit_db_session(request: Request, call_next):
+        """
+        Commit db_session before response is returned.
+        """
+        response = await call_next(request)
+        db_session = request.state._state.get("db_session")  # noqa
+        if db_session:
+            await db_session.commit()
+        return response
+
+    @app.middleware("http")
     async def log_access(request: Request, call_next):
         if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
             return await call_next(request)
 
+        # body will be either JSON, None, or {"raw_body": "utf8"} if JSON decoding fails
         body_bytes = await request.body()
         try:
             body = json.loads(body_bytes) if body_bytes else None
@@ -75,6 +87,8 @@ def create_app() -> FastAPI:
 
         if route:
             query_string = str(request.url.query) or None
+            session_maker = get_async_session(request)
+
             access = Access(
                 user_id=user_token.user_id if user_token else None,
                 token_id=api_token.token_id if api_token else None,
@@ -84,10 +98,16 @@ def create_app() -> FastAPI:
                 payload=body,
                 status=response.status_code,
             )
-            async_session_maker = get_async_session(request)
-            async with async_session_maker() as session:
-                session.add(access)
-                await session.commit()
+
+            async def write_access_log():
+                async with session_maker() as session:
+                    session.add(access)
+                    await session.commit()
+
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(write_access_log)
+            response.background = background_tasks
+
         return response
 
     for router in all_routers:
