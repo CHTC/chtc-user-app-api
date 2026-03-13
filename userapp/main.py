@@ -4,9 +4,10 @@ import asyncio
 import json
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import FastAPI
 from pydantic_settings import BaseSettings
 from starlette.requests import Request
+from starlette.background import BackgroundTasks
 
 from userapp.api.routes import all_routers
 from userapp.core.models.enum import HttpRequestMethodEnum
@@ -62,7 +63,7 @@ def create_app() -> FastAPI:
         Commit db_session before response is returned.
         """
         response = await call_next(request)
-        db_session = request.state._state.get("db_session")  # noqa
+        db_session = getattr(request.state, "db_session", None)
         if db_session:
             await db_session.commit()
         return response
