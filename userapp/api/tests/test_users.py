@@ -34,7 +34,7 @@ class TestUsers:
         assert response.status_code == 201, f"Creating a user should return a 201 status code, instead got {response.text}"
         created_user = response.json()
         for key in created_user:
-            if key not in ["id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups", "auth_netid", "auth_username"]:
+            if key not in ["id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups", "auth_netid", "auth_username", "username"]:
                 assert created_user[key] == user_payload[key], f"User {key} should match the payload"
 
         assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
@@ -52,6 +52,7 @@ class TestUsers:
         fetched_user = user_response.json()
         assert fetched_user['id'] == user['id'], "Fetched user ID should match the created user ID"
         assert fetched_user['name'] == user['name'], "Fetched user name should match the created user name"
+        assert fetched_user['username'] is None, "Fetched user username should be None"
 
     def test_update_user_simple(self, admin_client: Client, user_factory, project_factory):
         """Test updating an existing user"""

@@ -40,6 +40,7 @@ class UserGet(BaseModel):
 
     id: Optional[int] = Field(default=None)
     name: str
+    username: None = Field(default=None)
     email1: EmailStr
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
