@@ -8,8 +8,8 @@ from userapp.core.models.enum import RoleEnum, PositionEnum
 def project_data_f(
     name: Optional[str] = None,
     pi: Optional[int] = None,
-    staff1: Optional[str] = None,
-    staff2: Optional[str] = None,
+    staff1: Optional[int] = None,
+    staff2: Optional[int] = None,
     status: Optional[str] = None,
     access: Optional[str] = None,
     accounting_group: Optional[str] = None,
@@ -39,9 +39,7 @@ def user_data_f(index: int, primary_project_id, is_admin=False) -> dict:
     """
     rand = random.randint(100000, 999999)
     return {
-        "username": f"user_{index}_{rand}",
         "name": f"User {index}",
-        "password": f"Testpassword{rand}",
         "email1": f"testuser{rand}@example.com",
         "email2": f"altuser{rand}@example.com",
         "netid": f"netid{rand}",
@@ -49,8 +47,7 @@ def user_data_f(index: int, primary_project_id, is_admin=False) -> dict:
         "phone1": f"555-010{index}",
         "phone2": f"555-020{index}",
         "is_admin": is_admin,
-        "auth_netid": False,
-        "auth_username": True,
+        "active": True,
         "unix_uid": rand,
         "position": PositionEnum.GRAD_STUDENT.name,
         "primary_project_id": primary_project_id,

@@ -2,7 +2,7 @@ import random
 
 group_data_f = lambda: {
     "name": f"test-group-{random.randint(0, 10000000)}",
-    "point_of_contact": "test-contact",
+    "point_of_contact": None,
     "unix_gid": random.randint(55000, 60000),
     "has_groupdir": True
 }
@@ -173,9 +173,11 @@ class TestGroups:
         group = group_response.json()[0]
         group_id = group.pop('id')
 
-        # Now, try to add another group with the same unix_gid
+        # point_of_contact is now a UserGet object; extract just the id for the PUT body
+        poc = group.get('point_of_contact')
         new_group_data = {
             **group,
+            "point_of_contact": poc['id'] if poc else None,
             "unix_gid": 600001
         }
 
@@ -185,6 +187,24 @@ class TestGroups:
         )
 
         assert response.status_code == 400, f"Updating a group with a out of bounds unix_gid should return a 400 status code. Got {response.content} instead."
+
+    def test_add_group_with_point_of_contact(self, admin_client, user):
+        """Test that creating a group with a point_of_contact returns a UserGet object"""
+
+        group_data = group_data_f()
+        group_data['point_of_contact'] = user['id']
+
+        response = admin_client.post("/groups", json=group_data)
+        assert response.status_code == 201, f"Adding a group should return a 201 status code. Got {response.content} instead."
+
+        data = response.json()
+        poc = data['point_of_contact']
+
+        assert poc is not None, "point_of_contact should not be null"
+        assert poc['id'] == user['id'], "The returned point_of_contact id does not match the input user"
+        assert poc['name'] == user['name'], "The returned point_of_contact name does not match"
+        assert poc['netid'] == user['netid'], "The returned point_of_contact netid does not match"
+        assert poc['is_admin'] == user['is_admin'], "The returned point_of_contact is_admin does not match"
 
     def test_add_delete_user_to_group(self, admin_client, admin_user):
         """Test adding and deleting a user to/from a group"""

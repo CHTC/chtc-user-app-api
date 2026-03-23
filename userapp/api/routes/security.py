@@ -59,7 +59,6 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
 http_bearer = HTTPBearer(auto_error=False)
 
 class TokenData(BaseModel):
-    username: str
     user_id: int
     is_admin: bool
 
@@ -102,10 +101,9 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
         payload = jwt.decode(
             token, os.environ["SECRET_KEY"], algorithms=["HS256"]
         )
-        username: str = payload.get("username")
         user_id: int = payload.get("user_id")
         is_admin: bool = payload.get("is_admin", False)
-        token_data = TokenData(username=username, is_admin=is_admin, user_id=user_id)
+        token_data = TokenData(is_admin=is_admin, user_id=user_id)
     except JWTError as e:
         return None
 
@@ -460,7 +458,7 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
     session_id = str(uuid.uuid4())
     response.set_cookie(
         "login_token",
-        f"Bearer {create_login_token(username=user.username, user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
+        f"Bearer {create_login_token(user_id=user.id, is_admin=user.is_admin, session_id=session_id)}",
         httponly=True,
         samesite="strict"
     )
@@ -486,7 +484,7 @@ async def get_current_user(user_token=Depends(get_user_from_cookie), api_token=D
     """Get the current user"""
 
     if user_token:
-        return {"username": user_token.username, "is_admin": user_token.is_admin, "user_id": user_token.user_id}
+        return {"is_admin": user_token.is_admin, "user_id": user_token.user_id}
     elif api_token:
         return {"token_id": api_token.token_id, "is_admin": True}
     else:

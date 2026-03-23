@@ -1,7 +1,11 @@
 ## Release
 
 ```shell
-docker build --platform linux/amd64 -t hub.opensciencegrid.org/opensciencegrid/chtc-userapp-api:active-field .
+docker build --platform linux/amd64 -t hub.opensciencegrid.org/chtc/chtc-user-app-api:active_field .
+```
+
+```shell
+docker push hub.opensciencegrid.org/chtc/chtc-user-app-api:active_field
 ```
 
 ```shell

@@ -46,7 +46,7 @@ class TestTokens:
     def test_use_token_bad_ip_none(self, token_client: Callable[[str], TestClient]):
         """Test using token to authenticate"""
 
-        del os.environ['TOKEN_IP_WHITELIST']
+        os.environ.pop('TOKEN_IP_WHITELIST', None)
 
         with token_client() as client:
 
@@ -133,14 +133,14 @@ class TestTokens:
         r = admin_client.post(
             f"/tokens/{token['id']}/permissions",
             json={
-                "route": "/users",
+                "route": "/groups",
                 "method": "GET"
             }
         )
 
         assert r.status_code == 201
         data = r.json()
-        assert data["route"] == "/users"
+        assert data["route"] == "/groups"
         assert data["method"] == "GET"
 
     def test_create_token_permission_invalid_route(self, admin_client: TestClient, token):
@@ -224,11 +224,11 @@ class TestTokens:
     def test_getting_tokens_permissions(self, token, admin_client: TestClient):
         """Test getting a token's permissions"""
 
-        # First add a permission to ensure there is at least one
+        # First add a permission to ensure there is at least one (fixture already adds GET /users)
         r = admin_client.post(
             f"/tokens/{token['id']}/permissions",
             json={
-                "route": "/users",
+                "route": "/groups",
                 "method": "GET"
             }
         )

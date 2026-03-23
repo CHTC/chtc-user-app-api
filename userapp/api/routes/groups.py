@@ -13,6 +13,8 @@ from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoin
 from userapp.core.schemas.general import Relationship
 from userapp.core.schemas.groups import GroupGet, GroupPost, GroupPatch
 from userapp.core.schemas.users import UserGet
+
+GroupGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 from userapp.core.models.tables import User as UserTable, Group as GroupTable, UserGroup
 
 

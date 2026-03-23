@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
     Table, Index
@@ -15,9 +15,15 @@ class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(VARCHAR(32), unique=True, nullable=False)
-    point_of_contact = Column(String(50))
+    point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
     unix_gid = Column(Integer, unique=True)
     has_groupdir = Column(Boolean, nullable=False, default=True)
+
+    point_of_contact_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[point_of_contact],
+        lazy="selectin",
+    )
 
 
 class Note(Base):
@@ -25,16 +31,21 @@ class Note(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket = Column(String(9))
     note = Column(Text, nullable=False)
-    author = Column(String(255))
+    author_id = Column('author', Integer, ForeignKey('users.id', ondelete='SET NULL'))
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
     # Relationships
+    author: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[author_id],
+        lazy="selectin",
+    )
     users: Mapped[List["User"]] = relationship(
         secondary="user_notes",
         primaryjoin="Note.id==UserNote.note_id",
         secondaryjoin="User.id==UserNote.user_id",
         foreign_keys="[UserNote.note_id, UserNote.user_id]",
-        lazy="joined",
+        lazy="selectin",
         back_populates="notes"
     )
 
@@ -44,8 +55,8 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
     pi = Column(Integer)
-    staff1 = Column(String(255))
-    staff2 = Column(String(255))
+    staff1 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
+    staff2 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
     status = Column(String(255))
     access = Column(String(255))
     accounting_group = Column(String(255), nullable=False)
@@ -53,6 +64,17 @@ class Project(Base):
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     ticket = Column(Integer)
     last_contact = Column(TIMESTAMP)
+
+    staff1_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[staff1],
+        lazy="selectin",
+    )
+    staff2_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[staff2],
+        lazy="selectin",
+    )
 
 
 class SubmitNode(Base):
@@ -68,9 +90,7 @@ class User(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(255), unique=True)
     name = Column(String(255), nullable=False)
-    password = Column(String(255))
     email1 = Column(String(255), nullable=False)
     email2 = Column(String(255))
     netid = Column(String(255)) # Made unique via a Table constraint
@@ -78,8 +98,7 @@ class User(Base):
     phone1 = Column(String(255))
     phone2 = Column(String(255))
     is_admin = Column(Boolean, default=False)
-    auth_netid = Column(Boolean, default=False)
-    auth_username = Column(Boolean, default=False)
+    active = Column(Boolean, nullable=False, server_default='false')
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
@@ -89,21 +108,21 @@ class User(Base):
         primaryjoin="User.id==UserNote.user_id",
         secondaryjoin="Note.id==UserNote.note_id",
         foreign_keys="[UserNote.user_id, UserNote.note_id]",
-        lazy="joined",
+        lazy="selectin",
         back_populates="users"
     )
 
     submit_nodes: Mapped[List[UserSubmitNodesView]] = relationship(
         "UserSubmitNodesView",
         primaryjoin="User.id==foreign(UserSubmitNodesView.user_id)",
-        lazy="joined",
+        lazy="selectin",
         viewonly=True,
     )
 
     projects: Mapped[List["JoinedProjectView"]] = relationship(
         "JoinedProjectView",
         primaryjoin="User.id==foreign(JoinedProjectView.id)",
-        lazy="joined",
+        lazy="selectin",
         viewonly=True,
     )
 
@@ -112,7 +131,7 @@ class User(Base):
         primaryjoin="User.id==UserGroup.user_id",
         secondaryjoin="Group.id==UserGroup.group_id",
         foreign_keys="[UserGroup.user_id, UserGroup.group_id]",
-        lazy="joined",
+        lazy="selectin",
         backref="users"
     )
 
@@ -177,7 +196,7 @@ class Token(Base):
     permissions: Mapped[List["TokenPermission"]] = relationship(
         "TokenPermission",
         cascade="all, delete-orphan",
-        lazy="joined"
+        lazy="selectin"
     )
 
 class TokenPermission(Base):

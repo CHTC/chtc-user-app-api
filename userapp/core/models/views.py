@@ -1,5 +1,8 @@
+from typing import Optional
+
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import Mapped, relationship
 
 from userapp.core.models.enum import RoleEnum, PositionEnum
 from userapp.core.models.main import Base
@@ -9,7 +12,6 @@ class PiProjectView(Base):
     __tablename__ = 'pi_projects'
     __table_args__ = {'info': dict(is_view=True)}
     user_id = Column(Integer, primary_key=True)
-    username = Column(String(255))
     name = Column(String(255))
     project_id = Column(Integer, primary_key=True)
     project_name = Column(String(255))
@@ -24,13 +26,25 @@ class JoinedProjectView(Base):
     id = Column(Integer, primary_key=True)
     project_id = Column(Integer, primary_key=True)
     project_name = Column(String(255))
-    project_staff1 = Column(String(255))
-    project_staff2 = Column(String(255))
+    project_staff1 = Column(Integer)
+    project_staff2 = Column(Integer)
     project_status = Column(String(255))
+
+    staff1_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="JoinedProjectView.project_staff1==foreign(User.id)",
+        lazy="selectin",
+        viewonly=True,
+    )
+    staff2_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="JoinedProjectView.project_staff2==foreign(User.id)",
+        lazy="selectin",
+        viewonly=True,
+    )
     project_last_contact = Column(TIMESTAMP)
     project_accounting_group = Column(String(255))
     is_primary = Column(Boolean)
-    username = Column(String(255))
     name = Column(String(255))
     email1 = Column(String(255))
     email2 = Column(String(255))
@@ -39,8 +53,7 @@ class JoinedProjectView(Base):
     phone1 = Column(String(255))
     phone2 = Column(String(255))
     is_admin = Column(Boolean)
-    auth_netid = Column(Boolean)
-    auth_username = Column(Boolean)
+    active = Column(Boolean)
     date = Column(TIMESTAMP)
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"))

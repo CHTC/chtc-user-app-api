@@ -1,6 +1,6 @@
 import random
 
-from userapp.api.tests.main import admin_client as client
+from userapp.api.tests.conftest import admin_client as client
 
 class TestListing:
 
@@ -37,9 +37,10 @@ class TestListing:
         total_count_subset = response_subset.headers.get("X-Total-Count")
         assert total_count_subset == total_count, "X-Total-Count should be the same regardless of page size"
 
-        response = client.get("/groups?page_size=43&point_of_contact=eq.ckoch5")
+        response = client.get("/groups?page_size=43&name=eq.admin")
         total_count_filtered = response.headers.get("X-Total-Count")
 
+        assert response.status_code == 200, "Example filtered request should return 200 status code"
         assert total_count_filtered is not None, "X-Total-Count header is missing for filtered request"
         assert int(total_count_filtered) <= int(total_count), "X-Total-Count for filtered request should be less than or equal to unfiltered"
 

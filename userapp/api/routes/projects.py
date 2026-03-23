@@ -16,8 +16,11 @@ from userapp.core.models.tables import Project as ProjectTable, Note as NoteTabl
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable
 from userapp.core.schemas.users import UserGet
 
-# Rebuild field for those that would cause circular imports
-NoteGetFull.model_rebuild()
+# Rebuild fields that use forward references to avoid circular imports
+NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+NoteGetFull.model_rebuild(_types_namespace={'UserGet': UserGet})
+ProjectGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/projects",
@@ -138,7 +141,7 @@ async def get_project_note(project_id: int, note_id: int, session=Depends(sessio
 async def add_note_to_project(project_id: int, note: ProjectNotePost, session=Depends(session_generator), user_token=Depends(get_user_from_cookie)) -> NoteGetFull:
     """Add a note to a project"""
 
-    note_row = NoteTableSchema(**{**note.model_dump(), 'author': user_token.username if user_token else 'Automated Process'})
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author_id': user_token.user_id if user_token else None})
     new_note = await create_one_endpoint(session, NoteTable, note_row)
 
     # Associate this note to the project
@@ -169,7 +172,7 @@ async def update_note_in_project(project_id: int, note_id: int, note: ProjectNot
     """Update a note in a project"""
 
     # Update the note content
-    note_row = NoteTableSchema(**{**note.model_dump(), 'author':  user_token.username if user_token else 'Automated Process'})
+    note_row = NoteTableSchema(**{**note.model_dump(), 'author_id': user_token.user_id if user_token else None})
     updated_note = await update_one_endpoint(session, NoteTable, note_id, note_row)
 
     # Update the user associations

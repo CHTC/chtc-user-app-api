@@ -13,8 +13,8 @@ class ProjectTableSchema(BaseModel):
     id:  Optional[int] = Field(default=None)
     name: str
     pi: Optional[int] = Field(default=None)
-    staff1: Optional[str] = Field(default=None)
-    staff2: Optional[str] = Field(default=None)
+    staff1: Optional[int] = Field(default=None)
+    staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
     access: Optional[str] = Field(default=None)
     accounting_group: str
@@ -24,7 +24,9 @@ class ProjectTableSchema(BaseModel):
     last_contact: Optional[datetime] = Field(default=None)
 
 class ProjectGet(ProjectTableSchema):
-    """Exact same as ProjectTableSchema for now, but kept separate for future changes"""
+
+    staff1: Optional["UserGet"] = Field(default=None, validation_alias='staff1_user')
+    staff2: Optional["UserGet"] = Field(default=None, validation_alias='staff2_user')
 
     @field_serializer('url')
     def serialize_url(self, url):
@@ -34,8 +36,8 @@ class ProjectPost(BaseModel):
 
     name: str
     pi: Optional[int] = Field(default=None)
-    staff1: Optional[str] = Field(default=None)
-    staff2: Optional[str] = Field(default=None)
+    staff1: Optional[int] = Field(default=None)
+    staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
     access: Optional[str] = Field(default=None)
     accounting_group: str
@@ -51,8 +53,8 @@ class ProjectPatch(BaseModel):
 
     name: Optional[str] = Field(default=None)
     pi: Optional[int] = Field(default=None)
-    staff1: Optional[str] = Field(default=None)
-    staff2: Optional[str] = Field(default=None)
+    staff1: Optional[int] = Field(default=None)
+    staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
     access: Optional[str] = Field(default=None)
     accounting_group: Optional[str] = Field(default=None)

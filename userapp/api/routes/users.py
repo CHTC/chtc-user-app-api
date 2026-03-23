@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload, joinedload
 from starlette.responses import Response
-from passlib.hash import sha256_crypt
 
 from userapp.core.schemas.groups import GroupGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin, is_admin, is_user, verify_password, create_password_hash, \
-    check_is_user
+from userapp.api.routes.security import check_is_admin, is_admin, is_user, check_is_user
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
@@ -18,10 +17,11 @@ from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSche
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
     UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView
-from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup
+from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 
 # Rebuild field for those that would cause circular imports
-NoteGet.model_rebuild()
+NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/users",
@@ -34,9 +34,19 @@ router = APIRouter(
     }
 )
 
+# Load options for users to load in nested relationships
+_user_load_options = [
+    selectinload(UserTable.notes).joinedload(NoteTable.author),
+    selectinload(UserTable.groups).joinedload(Group.point_of_contact_user),
+    selectinload(UserTable.projects).selectinload(JoinedProjectViewTable.staff1_user),
+    selectinload(UserTable.projects).selectinload(JoinedProjectViewTable.staff2_user),
+    selectinload(UserTable.submit_nodes)
+]
+
+
 @router.get("")
 async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> list[UserGetFull]:
-    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size)
+    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=_user_load_options)
 
 
 @router.delete("/{user_id}", status_code=204)
@@ -46,7 +56,7 @@ async def delete_user(user_id: int, session=Depends(session_generator), check_is
 
 @router.get("/{user_id}")
 async def get_user(user_id: int, session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> UserGetFull:
-    return await get_one_endpoint(session, UserTable, user_id)
+    return await get_one_endpoint(session, UserTable, user_id, load_options=_user_load_options)
 
 
 @router.post("", status_code=201)
@@ -54,9 +64,8 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
 
     # Create the user
     user_data_only = UserTableSchema(**user.model_dump())
-    if user.password is not None:
-        user_data_only.password = create_password_hash(user.password)
-    created_user = await create_one_endpoint(session, UserTable, user_data_only)
+    created_user = await create_one_endpoint(session, UserTable, user_data_only, load_options=_user_load_options)
+    created_user_id = created_user.id
 
     # Create the project association
     user_project_schema = UserProjectTableSchema(project_id=user.primary_project_id, role=user.primary_project_role, is_primary=True, user_id=created_user.id)
@@ -76,7 +85,10 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
             await create_one_endpoint(session, UserSubmit, user_submit_model)
 
     await session.flush()
-    await session.refresh(created_user)
+
+    # Expire the user to force a fresh load from the database
+    session.expire(created_user)
+    created_user = await get_one_endpoint(session, UserTable, created_user_id, load_options=_user_load_options)
 
     return created_user
 
@@ -89,22 +101,13 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         user_update_schema = RestrictedUserPatch(
             **user.model_dump(exclude_unset=True)
         )
-
-        # If the password is being updated, double check they know it again, then hash it
-        if user_update_schema.password:
-            existing_user = await get_one_endpoint(session, UserTable, user_id)
-            if not verify_password(user.current_password, existing_user.password):
-                raise HTTPException(status_code=401, detail="Password doesn't match")
-
-        return await update_one_endpoint(session, UserTable, user_id, user_update_schema)
+        return await update_one_endpoint(session, UserTable, user_id, user_update_schema, load_options=_user_load_options)
 
     elif is_admin:
 
         # Update user
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
-        if user_data_only.password:
-            user_data_only.password = create_password_hash(user_data_only.password)
-        updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only)
+        updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=_user_load_options)
 
         # Update Submit Nodes if patched
         if user.submit_nodes is not None:
@@ -135,7 +138,9 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
                     )
                     await create_one_endpoint(session, UserSubmit, user_submit_model)
 
-        await session.refresh(updated_user)
+        # Expire the instance to force a fresh load from the database
+        session.expire(updated_user)
+        updated_user = await get_one_endpoint(session, UserTable, user_id, load_options=_user_load_options)
 
         return updated_user
 

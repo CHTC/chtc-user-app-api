@@ -30,9 +30,7 @@ def api_client() -> Generator[TestClient, Any, None]:
 @pytest.fixture
 def existing_admin_user() -> dict:
     return {
-        "username": os.environ.get("TEST_ADMIN_USERNAME", "admin"),
-        "password": os.environ.get("TEST_ADMIN_PASSWORD", "password"),
-        "id": int(os.environ.get("TEST_ADMIN_ID", 0))
+        "id": int(os.environ.get("TEST_ADMIN_ID", 4))
     }
 
 
@@ -41,7 +39,6 @@ def _make_auth_client(user: dict) -> Generator[TestClient, Any, None]:
         session_id = "test-session-admin"
 
         login_jwt = create_login_token(
-            username=user["username"],
             user_id=user["id"],
             is_admin=user.get("is_admin", False),
             session_id=session_id,
@@ -97,13 +94,15 @@ def token_client(token: dict) -> Callable[[str], TestClient]:
 
 
 @pytest.fixture
-def project_factory(existing_admin_client: Client):
+def project_factory(existing_admin_client: Client) -> Callable[[str], TestClient]:
     """Fixture to create projects on demand in tests."""
 
     def _create_project() -> dict:
+
+        admin_user_response = existing_admin_client.get("/me").json()
         project_response = existing_admin_client.post(
             "/projects",
-            json=project_data_f()
+            json=project_data_f(staff1=admin_user_response['user_id'])
         )
         assert project_response.status_code == 201, f"Creating a project should return a 201 status code, instead got {project_response.text}"
         return project_response.json()
@@ -148,10 +147,7 @@ def user_factory(existing_admin_client: Client):
         )
         assert response.status_code == 201, f"Creating a user should return a 201 status code instead of {response.text}"
 
-        return {
-            **response.json(),
-            "password": user_payload["password"]
-        }
+        return response.json()
 
     return _create_user
 
@@ -178,10 +174,7 @@ def admin_user_factory(existing_admin_client: Client):
         )
         assert response.status_code == 201, f"Creating a user should return a 201 status code instead of {response.text}"
 
-        return {
-            **response.json(),
-            "password": user_payload["password"]
-        }
+        return response.json()
 
     return _create_admin_user
 
@@ -197,10 +190,10 @@ def admin_user(existing_admin_client: Client, project_factory: Callable, admin_u
 
 
 @pytest.fixture
-def token(existing_admin_client: Client) -> str:
+def token(admin_client: Client) -> str:
     """Fixture to create and yield an authentication token for a user."""
 
-    response = existing_admin_client.post(
+    response = admin_client.post(
         "/tokens",
         json={
             "description": "Test Token"
@@ -210,16 +203,16 @@ def token(existing_admin_client: Client) -> str:
     token = response.json()
 
     # Add some general access to the test token
-    add_permissions_response = existing_admin_client.post(f"/tokens/{token['id']}/permissions", json={
+    add_permissions_response = admin_client.post(f"/tokens/{token['id']}/permissions", json={
         "route": "/users",
         "method": "GET"
     })
     assert add_permissions_response.status_code == 201, f"Adding permissions to the token should return a 201 status code instead of {add_permissions_response.text}"
-    add_permissions_response = existing_admin_client.post(f"/tokens/{token['id']}/permissions", json={
+    add_permissions_response = admin_client.post(f"/tokens/{token['id']}/permissions", json={
         "route": "/tokens/{token_id}",
         "method": "GET"
     })
     assert add_permissions_response.status_code == 201, f"Adding permissions to the token should return a 201 status code instead of {add_permissions_response.text}"
 
     yield token
-    existing_admin_client.delete(f"/tokens/{token['id']}")
+    admin_client.delete(f"/tokens/{token['id']}")
