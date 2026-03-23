@@ -107,6 +107,7 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
     except JWTError as e:
         return None
 
+    request.state.user_token = token_data
     return token_data
 
 
@@ -177,7 +178,9 @@ async def get_auth_from_api_token(request: Request, session=Depends(session_gene
     if (request.method, request.scope.get('route').path) not in set([(p.method.value, p.route) for p in token.permissions]):
         return None
     
-    return ApiTokenData(token_id=token.id, is_admin=True)
+    api_token_data = ApiTokenData(token_id=token.id, is_admin=True)
+    request.state.api_token = api_token_data
+    return api_token_data
 
 
 async def is_admin(user_token=Depends(get_user_from_cookie), api_token=Depends(get_auth_from_api_token)):

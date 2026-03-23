@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
     Table, Index
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
 
@@ -215,7 +216,9 @@ class Access(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     token_id = Column(Integer, ForeignKey('tokens.id'), nullable=True)
+    method = Column(SQLEnum(HttpRequestMethodEnum, name="http_request_method_enum"), nullable=False)
     route = Column(String(255), nullable=False)
-    payload = Column(String(255), nullable=False)
+    query_string = Column(String(2048), nullable=True)
+    payload = Column(postgresql.JSONB, nullable=True)
+    status = Column(Integer, nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
-    expires_at = Column(TIMESTAMP)

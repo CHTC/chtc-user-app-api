@@ -1,3 +1,4 @@
+from .access import router as access_router
 from .groups import router as groups_router
 from .pi_projects import router as pi_projects_router
 from .projects import router as projects_router
@@ -8,6 +9,7 @@ from .tokens import router as tokens_router
 from .routes import router as routes_router
 
 all_routers = [
+    access_router,
     routes_router,
     groups_router,
     pi_projects_router,
