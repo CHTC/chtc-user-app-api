@@ -9,10 +9,8 @@ from userapp.core.schemas.general import BaseModel
 
 class BaseFormTableSchema(BaseModel):
     """Schema for the database representation of a BaseForm."""
-    id: int
+    id: Optional[int] = Field(default=None)
     form_type: FormTypeEnum
-    name: str
-    description: Optional[str] = Field(default=None)
     created_by: Optional[int] = Field(default=None)
 
 
@@ -24,8 +22,6 @@ class UserFormTableSchema(BaseModel):
 
 class UserFormGet(BaseModel):
     id: int
-    name: str
-    description: Optional[str] = Field(default=None)
     status: FormStatusEnum
     created_by: Optional[int] = Field(default=None)
     created_at: datetime
@@ -34,8 +30,6 @@ class UserFormGet(BaseModel):
 
 
 class UserFormPost(BaseModel):
-    name: str
-    description: Optional[str] = Field(default=None)
     netid: str
 
 

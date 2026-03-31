@@ -226,8 +226,6 @@ class BaseForm(Base):
     id = Column(Integer, primary_key=True, index=True)
     form_type = Column(SQLEnum(FormTypeEnum, name="form_type_enum"), nullable=False)
     status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"), nullable=False, server_default=FormStatusEnum.PENDING.value)
-    name = Column(String(255), nullable=False)
-    description = Column(Text)
     created_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"))
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())

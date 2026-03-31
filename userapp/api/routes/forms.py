@@ -21,7 +21,7 @@ router = APIRouter(
 )
 
 
-@router.post("/user", status_code=201)
+@router.post("/users", status_code=201)
 async def create_user_form(
     form: UserFormPost,
     session=Depends(session_generator),
@@ -30,8 +30,6 @@ async def create_user_form(
 ) -> UserFormGet:
     base_form_schema = BaseFormTableSchema(
         form_type=FormTypeEnum.USER,
-        name=form.name,
-        description=form.description,
         created_by=user_token.user_id if user_token else None,
     )
     created_base_form = cast(BaseFormTableSchema, await create_one_endpoint(session, BaseFormTable, base_form_schema))
@@ -45,7 +43,7 @@ async def create_user_form(
     )
 
 
-@router.put("/user/{form_id}", status_code=200)
+@router.put("/users/{form_id}", status_code=200)
 async def update_user_form_status(
     form_id: int,
     form: UserFormPut,
