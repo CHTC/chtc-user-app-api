@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, Foreig
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, HttpRequestMethodEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
@@ -219,3 +219,21 @@ class Access(Base):
     payload = Column(String(255), nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
     expires_at = Column(TIMESTAMP)
+
+
+class BaseForm(Base):
+    __tablename__ = 'forms'
+    id = Column(Integer, primary_key=True, index=True)
+    form_type = Column(SQLEnum(FormTypeEnum, name="form_type_enum"), nullable=False)
+    status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"), nullable=False, server_default=FormStatusEnum.PENDING.value)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    created_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"))
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class UserForm(Base):
+    __tablename__ = 'user_form'
+    id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
+    netid = Column(String(255), nullable=False)

@@ -1,3 +1,4 @@
+from .forms import router as forms_router
 from .groups import router as groups_router
 from .pi_projects import router as pi_projects_router
 from .projects import router as projects_router
@@ -9,6 +10,7 @@ from .routes import router as routes_router
 
 all_routers = [
     routes_router,
+    forms_router,
     groups_router,
     pi_projects_router,
     projects_router,
