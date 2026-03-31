@@ -3,7 +3,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
-from userapp.api.routes.security import check_is_admin, check_is_authenticated, get_user_from_cookie
+from userapp.api.routes.security import check_is_admin, get_current_user, get_user_from_cookie
 from userapp.api.util import create_one_endpoint, update_one_endpoint
 from userapp.core.models.enum import FormTypeEnum
 from userapp.core.models.tables import BaseForm as BaseFormTable, UserForm as UserFormTable
@@ -26,11 +26,11 @@ async def create_user_form(
     form: UserFormPost,
     session=Depends(session_generator),
     user_token=Depends(get_user_from_cookie),
-    _=Depends(check_is_authenticated),
 ) -> UserFormGet:
     base_form_schema = BaseFormTableSchema(
         form_type=FormTypeEnum.USER,
-        created_by=user_token.user_id if user_token else None,
+        created_by=user_token.user_id,
+        updated_by=user_token.user_id,
     )
     created_base_form = cast(BaseFormTableSchema, await create_one_endpoint(session, BaseFormTable, base_form_schema))
 
@@ -38,7 +38,12 @@ async def create_user_form(
     created_user_form = cast(UserFormTableSchema, await create_one_endpoint(session, UserFormTable, user_form_schema))
 
     return UserFormGet(
-        **created_base_form.__dict__,
+        id=created_base_form.id,
+        status=created_base_form.status,
+        created_by=created_base_form.created_by,
+        created_at=created_base_form.created_at,
+        updated_by=created_base_form.updated_by,
+        updated_at=created_base_form.updated_at,
         netid=created_user_form.netid,
     )
 
@@ -57,6 +62,11 @@ async def update_user_form_status(
         raise HTTPException(status_code=404, detail="User form not found")
 
     return UserFormGet(
-        **updated_base_form.__dict__,
+        id=updated_base_form.id,
+        status=updated_base_form.status,
+        created_by=updated_base_form.created_by,
+        created_at=updated_base_form.created_at,
+        updated_by=updated_base_form.updated_by,
+        updated_at=updated_base_form.updated_at,
         netid=user_form.netid,
     )

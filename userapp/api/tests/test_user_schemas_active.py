@@ -14,7 +14,7 @@ class TestUserGetComputedFields:
         """Test that auth_netid computed field returns active value when True"""
         user_data = {
             'id': 1,
-            'username': 'testuser',
+            'username': None,
             'name': 'Test User',
             'email1': 'test@example.com',
             'active': True,
@@ -30,7 +30,7 @@ class TestUserGetComputedFields:
         """Test that auth_netid computed field returns active value when False"""
         user_data = {
             'id': 2,
-            'username': 'testuser2',
+            'username': None,
             'name': 'Test User 2',
             'email1': 'test2@example.com',
             'active': False,
@@ -46,7 +46,7 @@ class TestUserGetComputedFields:
         """Test that auth_netid computed field returns None when active is None"""
         user_data = {
             'id': 3,
-            'username': 'testuser3',
+            'username': None,
             'name': 'Test User 3',
             'email1': 'test3@example.com',
             'active': None,
@@ -62,7 +62,7 @@ class TestUserGetComputedFields:
         """Test that auth_username computed field always returns False"""
         user_data_active_true = {
             'id': 4,
-            'username': 'testuser4',
+            'username': None,
             'name': 'Test User 4',
             'email1': 'test4@example.com',
             'active': True,
@@ -70,7 +70,7 @@ class TestUserGetComputedFields:
 
         user_data_active_false = {
             'id': 5,
-            'username': 'testuser5',
+            'username': None,
             'name': 'Test User 5',
             'email1': 'test5@example.com',
             'active': False,
@@ -87,7 +87,7 @@ class TestUserGetComputedFields:
         """Test that computed fields appear in model_dump output"""
         user_data = {
             'id': 6,
-            'username': 'testuser6',
+            'username': None,
             'name': 'Test User 6',
             'email1': 'test6@example.com',
             'active': True,
@@ -109,7 +109,7 @@ class TestUserPostValidation:
     def test_active_requires_netid_validation(self):
         """Test that active=True requires netid to be provided"""
         user_data = {
-            'username': 'testuser',
+            'username': None,
             'password': 'SecurePassword123',
             'name': 'Test User',
             'email1': 'test@example.com',
@@ -127,7 +127,7 @@ class TestUserPostValidation:
     def test_active_true_with_netid_succeeds(self):
         """Test that active=True with netid succeeds validation"""
         user_data = {
-            'username': 'testuser',
+            'username': None,
             'password': 'SecurePassword123',
             'name': 'Test User',
             'email1': 'test@example.com',
@@ -142,7 +142,7 @@ class TestUserPostValidation:
     def test_active_false_without_netid_succeeds(self):
         """Test that active=False without netid succeeds validation"""
         user_data = {
-            'username': 'testuser',
+            'username': None,
             'password': 'SecurePassword123',
             'name': 'Test User',
             'email1': 'test@example.com',
@@ -157,7 +157,7 @@ class TestUserPostValidation:
     def test_active_none_without_netid_succeeds(self):
         """Test that active=None (not set) without netid succeeds"""
         user_data = {
-            'username': 'testuser',
+            'username': None,
             'password': 'SecurePassword123',
             'name': 'Test User',
             'email1': 'test@example.com',
@@ -219,7 +219,7 @@ class TestUserTableSchema:
         """Test that UserTableSchema includes active field"""
         user_data = {
             'id': 1,
-            'username': 'testuser',
+            'username': None,
             'name': 'Test User',
             'email1': 'test@example.com',
             'active': True,
@@ -232,7 +232,7 @@ class TestUserTableSchema:
         """Test that UserTableSchema does not have old auth fields"""
         user_data = {
             'id': 2,
-            'username': 'testuser2',
+            'username': None,
             'name': 'Test User 2',
             'email1': 'test2@example.com',
             'active': False,

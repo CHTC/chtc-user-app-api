@@ -228,7 +228,20 @@ class BaseForm(Base):
     status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"), nullable=False, server_default=FormStatusEnum.PENDING.value)
     created_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"))
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"))
     updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    created_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[created_by],
+        lazy="selectin",
+    )
+
+    updated_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[updated_by],
+        lazy="selectin",
+    )
 
 
 class UserForm(Base):

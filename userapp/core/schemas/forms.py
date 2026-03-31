@@ -11,7 +11,8 @@ class BaseFormTableSchema(BaseModel):
     """Schema for the database representation of a BaseForm."""
     id: Optional[int] = Field(default=None)
     form_type: FormTypeEnum
-    created_by: Optional[int] = Field(default=None)
+    created_by: int
+    updated_by: int
 
 
 class UserFormTableSchema(BaseModel):
@@ -23,8 +24,9 @@ class UserFormTableSchema(BaseModel):
 class UserFormGet(BaseModel):
     id: int
     status: FormStatusEnum
-    created_by: Optional[int] = Field(default=None)
+    created_by: int
     created_at: datetime
+    updated_by: int
     updated_at: datetime
     netid: str
 
