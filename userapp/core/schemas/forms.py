@@ -16,25 +16,29 @@ class BaseFormTableSchema(BaseModel):
     updated_by: int
 
 
-class UserFormTableSchema(BaseModel):
-    """Schema for the database representation of a UserForm."""
-    id: int
-    netid: str
-
-
-class UserFormGet(BaseModel):
+class BaseFormGet(BaseModel):
     id: int
     status: FormStatusEnum
     created_by: UserGet = Field(validation_alias='created_by_user')
     created_at: datetime
     updated_by: UserGet = Field(validation_alias='updated_by_user')
     updated_at: datetime
+
+
+class BaseFormPut(BaseModel):
+    status: FormStatusEnum
+
+
+class UserFormTableSchema(BaseModel):
+    """Schema for the database representation of a UserForm."""
+    id: int
+    netid: str
+
+
+class UserFormGet(BaseFormGet):
     netid: str
 
 
 class UserFormPost(BaseModel):
     netid: str
 
-
-class UserFormPut(BaseModel):
-    status: FormStatusEnum
