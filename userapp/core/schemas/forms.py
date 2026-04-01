@@ -5,6 +5,7 @@ from pydantic import Field
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
 from userapp.core.schemas.general import BaseModel
+from userapp.core.schemas.users import UserGet
 
 
 class BaseFormTableSchema(BaseModel):
@@ -24,9 +25,9 @@ class UserFormTableSchema(BaseModel):
 class UserFormGet(BaseModel):
     id: int
     status: FormStatusEnum
-    created_by: int
+    created_by: UserGet = Field(validation_alias='created_by_user')
     created_at: datetime
-    updated_by: int
+    updated_by: UserGet = Field(validation_alias='updated_by_user')
     updated_at: datetime
     netid: str
 
