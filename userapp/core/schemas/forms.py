@@ -25,7 +25,7 @@ class BaseFormGet(BaseModel):
     updated_at: datetime
 
 
-class BaseFormPut(BaseModel):
+class BaseFormPatch(BaseModel):
     status: FormStatusEnum
 
 
@@ -41,4 +41,3 @@ class UserFormGet(BaseFormGet):
 
 class UserFormPost(BaseModel):
     netid: str
-

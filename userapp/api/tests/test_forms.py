@@ -1,6 +1,9 @@
 import random
+from unittest.mock import Mock
 
 from httpx import Client
+from userapp.api.routes import forms as forms_routes
+from userapp.core.models.enum import FormTypeEnum
 
 
 def user_form_data_f(netid: str = None) -> dict:
@@ -43,7 +46,7 @@ class TestUserFormPost:
         )
 
 
-class TestUserFormPut:
+class TestUserFormPatch:
 
     def test_admin_update_changes_updated_by_but_not_created_by(
         self,
@@ -70,10 +73,10 @@ class TestUserFormPut:
             f"Created form updated_by.id should be {user['id']}, got {created_form['updated_by']['id']}"
         )
 
-        update_response = admin_client.put(f"/forms/{form_id}", json={"status": "APPROVED"})
+        update_response = admin_client.patch(f"/forms/{form_id}", json={"status": "APPROVED"})
 
         assert update_response.status_code == 200, (
-            f"Admin PUT /forms/{form_id} should return 200, got {update_response.status_code}: {update_response.text}"
+            f"Admin PATCH /forms/{form_id} should return 200, got {update_response.status_code}: {update_response.text}"
         )
 
         updated_form = update_response.json()
@@ -85,20 +88,20 @@ class TestUserFormPut:
             f"Updated form updated_by.id should be {admin_user['id']}, got {updated_form['updated_by']['id']}"
         )
         assert "netid" not in updated_form, (
-            f"Generic PUT /forms/{form_id} response should not include netid, got {updated_form}"
+            f"Generic PATCH /forms/{form_id} response should not include netid, got {updated_form}"
         )
 
-    def test_nonadmin_cannot_put_user_form(self, nonadmin_client: Client, admin_client: Client):
+    def test_nonadmin_cannot_patch_user_form(self, nonadmin_client: Client, admin_client: Client):
         """Non-admin users should not be able to update form status."""
 
         create_response = admin_client.post("/forms/users", json=user_form_data_f())
         assert create_response.status_code == 201
         form_id = create_response.json()["id"]
 
-        response = nonadmin_client.put(f"/forms/{form_id}", json={"status": "APPROVED"})
+        response = nonadmin_client.patch(f"/forms/{form_id}", json={"status": "APPROVED"})
 
         assert response.status_code == 403, (
-            f"Non-admin PUT /forms/{form_id} should return 403, got {response.status_code}: {response.text}"
+            f"Non-admin PATCH /forms/{form_id} should return 403, got {response.status_code}: {response.text}"
         )
 
     def test_admin_can_approve_user_form(self, admin_client: Client):
@@ -108,21 +111,59 @@ class TestUserFormPut:
         assert create_response.status_code == 201
         form_id = create_response.json()["id"]
 
-        update_response = admin_client.put(f"/forms/{form_id}", json={"status": "APPROVED"})
+        update_response = admin_client.patch(f"/forms/{form_id}", json={"status": "APPROVED"})
 
         assert update_response.status_code == 200, (
-            f"Admin PUT /forms/{form_id} should return 200, got {update_response.status_code}: {update_response.text}"
+            f"Admin PATCH /forms/{form_id} should return 200, got {update_response.status_code}: {update_response.text}"
         )
         assert update_response.json()["status"] == "APPROVED"
         assert "netid" not in update_response.json(), (
-            f"Generic PUT /forms/{form_id} response should not include netid, got {update_response.json()}"
+            f"Generic PATCH /forms/{form_id} response should not include netid, got {update_response.json()}"
         )
 
-    def test_put_nonexistent_form_returns_404(self, admin_client: Client):
+    def test_patch_nonexistent_form_returns_404(self, admin_client: Client):
         """Updating a form that does not exist should return 404."""
 
-        response = admin_client.put("/forms/999999999", json={"status": "APPROVED"})
+        response = admin_client.patch("/forms/999999999", json={"status": "APPROVED"})
 
         assert response.status_code == 404, (
-            f"PUT /forms/999999999 should return 404, got {response.status_code}: {response.text}"
+            f"PATCH /forms/999999999 should return 404, got {response.status_code}: {response.text}"
         )
+
+
+class TestUserFormTriggers:
+
+    def test_approved_form_cannot_change_state(self, admin_client: Client):
+        """Once a form is approved, later status updates should fail."""
+
+        create_response = admin_client.post("/forms/users", json=user_form_data_f())
+        assert create_response.status_code == 201
+        form_id = create_response.json()["id"]
+
+        approve_response = admin_client.patch(f"/forms/{form_id}", json={"status": "APPROVED"})
+        assert approve_response.status_code == 200
+
+        second_update_response = admin_client.patch(f"/forms/{form_id}", json={"status": "DENIED"})
+
+        assert second_update_response.status_code == 400, (
+            f"PATCH /forms/{form_id} after approval should return 400, got {second_update_response.status_code}: "
+            f"{second_update_response.text}"
+        )
+
+    def test_approving_user_form_kicks_off_background_task(self, admin_client: Client, monkeypatch):
+        """Approving a user form should enqueue the approval side effect."""
+
+        create_response = admin_client.post("/forms/users", json=user_form_data_f())
+        assert create_response.status_code == 201
+        form_id = create_response.json()["id"]
+
+        task_mock = Mock()
+        monkeypatch.setitem(forms_routes.form_triggers, FormTypeEnum.USER, task_mock)
+
+        update_response = admin_client.patch(f"/forms/{form_id}", json={"status": "APPROVED"})
+
+        assert update_response.status_code == 200
+        task_mock.assert_called_once()
+        _, kwargs = task_mock.call_args
+        assert kwargs["form_id"] == form_id
+        assert kwargs["session_maker"] is not None
