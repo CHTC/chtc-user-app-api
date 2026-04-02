@@ -1,4 +1,3 @@
-import random
 from unittest.mock import Mock
 
 from httpx import Client
@@ -6,10 +5,12 @@ from userapp.api.routes import forms as forms_routes
 from userapp.core.models.enum import FormTypeEnum
 
 
-def user_form_data_f(netid: str = None) -> dict:
-    rand = random.randint(100000, 999999)
+def user_form_data_f() -> dict:
     return {
-        "netid": netid if netid else f"testnetid{rand}",
+        "pi_id": None,
+        "pi_name": "John Doe",
+        "pi_email": "johndoe@wisc.edu",
+        "position": "POSTDOC"
     }
 
 
@@ -34,17 +35,79 @@ class TestUserFormPost:
             f"New form status should default to PENDING, got '{response.json()['status']}'"
         )
 
-    def test_post_user_form_returns_correct_netid(self, nonadmin_client: Client):
-        """The created form should echo back the submitted netid."""
+    def test_post_user_form_accepts_named_pi_fields(self, nonadmin_client: Client):
+        """A user form can be submitted with PI name/email instead of a PI id."""
 
-        netid = f"testnetid{random.randint(100000, 999999)}"
-        response = nonadmin_client.post("/forms/users", json=user_form_data_f(netid=netid))
+        payload = user_form_data_f()
+        response = nonadmin_client.post("/forms/users", json=payload)
 
-        assert response.status_code == 201
-        assert response.json()["netid"] == netid, (
-            f"Response netid should be '{netid}', got '{response.json()['netid']}'"
+        assert response.status_code == 201, (
+            f"POST /forms/users with pi_name/pi_email should return 201, got {response.status_code}: {response.text}"
+        )
+        response_json = response.json()
+        assert response_json["pi_id"] is None
+        assert response_json["pi_name"] == payload["pi_name"]
+        assert response_json["pi_email"] == payload["pi_email"]
+
+    def test_post_user_form_accepts_pi_id(self, nonadmin_client: Client, user_factory, project_factory):
+        """A user form can be submitted with an existing PI id and no PI name/email."""
+
+        project = project_factory()
+        pi_user = user_factory(1, project_id=project["id"])
+        payload = user_form_data_f()
+        payload["pi_id"] = pi_user["id"]
+        payload["pi_name"] = None
+        payload["pi_email"] = None
+
+        response = nonadmin_client.post("/forms/users", json=payload)
+
+        assert response.status_code == 201, (
+            f"POST /forms/users with pi_id should return 201, got {response.status_code}: {response.text}"
+        )
+        response_json = response.json()
+        assert response_json["pi_id"] == pi_user["id"]
+        assert response_json["pi_name"] is None
+        assert response_json["pi_email"] is None
+
+    def test_post_user_form_rejects_missing_pi_email(self, nonadmin_client: Client):
+        """A user form should fail validation when only pi_name is provided."""
+
+        payload = user_form_data_f()
+        payload["pi_email"] = None
+
+        response = nonadmin_client.post("/forms/users", json=payload)
+
+        assert response.status_code == 422, (
+            f"POST /forms/users with pi_name but no pi_email should return 422, got {response.status_code}: {response.text}"
         )
 
+    def test_post_user_form_rejects_mixed_pi_id_and_name_email(self, nonadmin_client: Client, user_factory, project_factory):
+        """A user form should fail validation when both pi_id and pi_name/pi_email are provided."""
+
+        project = project_factory()
+        pi_user = user_factory(2, project_id=project["id"])
+        payload = user_form_data_f()
+        payload["pi_id"] = pi_user["id"]
+
+        response = nonadmin_client.post("/forms/users", json=payload)
+
+        assert response.status_code == 422, (
+            f"POST /forms/users with both pi_id and pi_name/pi_email should return 422, got {response.status_code}: {response.text}"
+        )
+
+    def test_post_user_form_rejects_nonexistent_pi_id(self, nonadmin_client: Client):
+        """A user form should return 400 when pi_id does not refer to an existing user."""
+
+        payload = user_form_data_f()
+        payload["pi_id"] = 999999999
+        payload["pi_name"] = None
+        payload["pi_email"] = None
+
+        response = nonadmin_client.post("/forms/users", json=payload)
+
+        assert response.status_code == 400, (
+            f"POST /forms/users with nonexistent pi_id should return 400, got {response.status_code}: {response.text}"
+        )
 
 class TestUserFormPatch:
 
@@ -87,9 +150,6 @@ class TestUserFormPatch:
         assert updated_form["updated_by"]["id"] == admin_user["id"], (
             f"Updated form updated_by.id should be {admin_user['id']}, got {updated_form['updated_by']['id']}"
         )
-        assert "netid" not in updated_form, (
-            f"Generic PATCH /forms/{form_id} response should not include netid, got {updated_form}"
-        )
 
     def test_nonadmin_cannot_patch_user_form(self, nonadmin_client: Client, admin_client: Client):
         """Non-admin users should not be able to update form status."""
@@ -117,9 +177,6 @@ class TestUserFormPatch:
             f"Admin PATCH /forms/{form_id} should return 200, got {update_response.status_code}: {update_response.text}"
         )
         assert update_response.json()["status"] == "APPROVED"
-        assert "netid" not in update_response.json(), (
-            f"Generic PATCH /forms/{form_id} response should not include netid, got {update_response.json()}"
-        )
 
     def test_patch_nonexistent_form_returns_404(self, admin_client: Client):
         """Updating a form that does not exist should return 404."""

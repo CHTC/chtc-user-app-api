@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
+from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
     Table, Index
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
@@ -247,4 +247,11 @@ class BaseForm(Base):
 class UserForm(Base):
     __tablename__ = 'user_form'
     id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
-    netid = Column(String(255), nullable=False)
+    pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    pi_name = Column(String(255), nullable=True)
+    pi_email = Column(String(255), nullable=True)
+    position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("((pi_id IS NOT NULL AND (pi_name IS NULL AND pi_email IS NULL)) OR (pi_id IS NULL AND (pi_name IS NOT NULL AND pi_email IS NOT NULL)))", name="ck_user_form_pi_info"),
+    )

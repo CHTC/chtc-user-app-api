@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from userapp.api.routes.security import check_is_admin, check_is_authenticated, get_user_from_cookie
 from userapp.api.util import create_one_endpoint, update_one_endpoint
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
-from userapp.core.models.tables import BaseForm as BaseFormTable, UserForm as UserFormTable
+from userapp.core.models.tables import BaseForm as BaseFormTable, User as UserTable, UserForm as UserFormTable
 from userapp.core.schemas.forms import BaseFormGet, UserFormGet, UserFormPost, BaseFormPatch, BaseFormTableSchema, UserFormTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import get_async_session, session_generator
@@ -49,7 +49,13 @@ async def create_user_form(
     )
     created_base_form: BaseFormTable = await create_one_endpoint(session, BaseFormTable, base_form_schema)
 
-    user_form_schema = UserFormTableSchema(id=created_base_form.id, netid=form.netid)
+    user_form_schema = UserFormTableSchema(
+        id=created_base_form.id,
+        pi_id=form.pi_id,
+        pi_name=form.pi_name,
+        pi_email=form.pi_email,
+        position=form.position,
+    )
     created_user_form: UserFormTable = await create_one_endpoint(session, UserFormTable, user_form_schema)
 
     # get the user objects for the created_by and updated_by fields
@@ -63,7 +69,10 @@ async def create_user_form(
         created_at=created_base_form.created_at,
         updated_by=user,
         updated_at=created_base_form.updated_at,
-        netid=created_user_form.netid,
+        pi_id=created_user_form.pi_id,
+        pi_name=created_user_form.pi_name,
+        pi_email=created_user_form.pi_email,
+        position=created_user_form.position,
     )
 
 

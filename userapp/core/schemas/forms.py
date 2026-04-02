@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
-from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum
 from userapp.core.schemas.general import BaseModel
 from userapp.core.schemas.users import UserGet
 
@@ -32,12 +32,35 @@ class BaseFormPatch(BaseModel):
 class UserFormTableSchema(BaseModel):
     """Schema for the database representation of a UserForm."""
     id: int
-    netid: str
+    pi_id: Optional[int] = Field(default=None)
+    pi_name: Optional[str] = Field(default=None)
+    pi_email: Optional[str] = Field(default=None)
+    position: PositionEnum
 
 
 class UserFormGet(BaseFormGet):
-    netid: str
+    pi_id: Optional[int] = Field(default=None)
+    pi_name: Optional[str] = Field(default=None)
+    pi_email: Optional[str] = Field(default=None)
+    position: PositionEnum
 
 
 class UserFormPost(BaseModel):
-    netid: str
+    pi_id: Optional[int] = Field(default=None)
+    pi_name: Optional[str] = Field(default=None)
+    pi_email: Optional[str] = Field(default=None)
+    position: PositionEnum
+
+    @model_validator(mode="after")
+    def validate_pi_fields(self):
+        has_pi_id = self.pi_id is not None
+        has_pi_name = self.pi_name is not None
+        has_pi_email = self.pi_email is not None
+
+        if has_pi_id == (has_pi_name or has_pi_email):
+            raise ValueError("Provide either pi_id or both pi_name and pi_email")
+
+        if has_pi_name != has_pi_email:
+            raise ValueError("pi_name and pi_email must be provided together")
+
+        return self
