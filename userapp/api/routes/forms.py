@@ -236,7 +236,6 @@ async def update_form_status(
 
     if user_token:
         # client could have authenticated through token
-        # TODO: consider adding user_id of token creator to a token?
         base_form.updated_by = user_token.user_id
         await session.flush()
 

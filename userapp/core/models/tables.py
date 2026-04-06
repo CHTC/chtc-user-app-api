@@ -245,8 +245,6 @@ class BaseForm(Base):
 
 class UserForm(Base):
     __tablename__ = 'user_form'
-    # TODO: Extend this model with project, project role, submit nodes, and
-    # flexible facilitator question responses once that shape is finalized.
     id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
     pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
     pi_name = Column(String(255), nullable=True)
