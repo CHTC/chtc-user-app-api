@@ -126,21 +126,6 @@ def _serialize_user_application(base_form: BaseFormTable, user_form: UserFormTab
     )
 
 
-async def _get_user_application(session: AsyncSession, form_id: int) -> UserFormGet:
-    select_stmt = (
-        select(BaseFormTable, UserFormTable)
-        .join(UserFormTable, BaseFormTable.id == UserFormTable.id)
-        .where(BaseFormTable.id == form_id)
-    )
-    result = await session.execute(select_stmt)
-    row = result.one_or_none()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    base_form, user_form = row
-    return _serialize_user_application(base_form, user_form)
-
-
 @router.get("")
 async def get_forms(
     response: Response,
@@ -260,4 +245,8 @@ async def update_form_status(
         await trigger(session, base_form.id, form)
 
     session.expire(base_form)
-    return await _get_user_application(session, form_id)
+    user_form = await session.get(UserFormTable, form_id)
+    if user_form is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    return _serialize_user_application(user_form.base_form, user_form)
