@@ -1,6 +1,7 @@
 from functools import lru_cache
 import traceback
 import logging
+from typing import Any, Callable, TypeVar, Union
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -10,7 +11,6 @@ from starlette.responses import Response
 from sqlalchemy import select, func
 from sqlalchemy.sql.selectable import Select
 from sqlalchemy.dialects import postgresql
-from typing import TypeVar, Union
 
 from userapp.query_parser import QueryParser
 
@@ -38,7 +38,17 @@ T = TypeVar("T", bound=BaseModel)
 
 
 @with_db_error_handling
-async def list_select_stmt(session, select_stmt: Select, model: type[DeclarativeBase], response: Response, filter_query_params, page: int = 0, page_size: int = 100, load_options=None):
+async def list_select_stmt(
+    session,
+    select_stmt: Select,
+    model: type[DeclarativeBase],
+    response: Response,
+    filter_query_params,
+    page: int = 0,
+    page_size: int = 100,
+    load_options=None,
+    row_mapper: Callable[[Any], Any] | None = None,
+):
     """Generic list endpoint generator"""
 
     query_parser = QueryParser(columns=model.__table__.c, query_params=filter_query_params)
@@ -64,13 +74,35 @@ async def list_select_stmt(session, select_stmt: Select, model: type[Declarative
     num_results_total = await session.execute(count_stmt)
     response.headers["X-Total-Count"] = str(num_results_total.scalar())
 
+    if row_mapper:
+        return [row_mapper(row) for row in results]
+
     # Depending on the select statement, if you use columns you can return directly, if you use models you need to extract from Row
     return [x[0] for x in results]
 
 
-async def list_endpoint(session, model: type[DeclarativeBase], response: Response, filter_query_params, page: int = 0, page_size: int = 100, load_options=None):
+async def list_endpoint(
+    session,
+    model: type[DeclarativeBase],
+    response: Response,
+    filter_query_params,
+    page: int = 0,
+    page_size: int = 100,
+    load_options=None,
+    row_mapper: Callable[[Any], Any] | None = None,
+):
     """Generic list endpoint generator"""
-    return await list_select_stmt(select_stmt=select(model), model=model, response=response, filter_query_params=filter_query_params, page=page, page_size=page_size, session=session, load_options=load_options)
+    return await list_select_stmt(
+        select_stmt=select(model),
+        model=model,
+        response=response,
+        filter_query_params=filter_query_params,
+        page=page,
+        page_size=page_size,
+        session=session,
+        load_options=load_options,
+        row_mapper=row_mapper,
+    )
 
 
 @with_db_error_handling

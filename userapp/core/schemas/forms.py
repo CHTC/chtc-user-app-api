@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum
 from userapp.core.schemas.general import BaseModel
+from userapp.core.schemas.user_submit import UserSubmitGet
 from userapp.core.schemas.users import UserGet
 
 
@@ -19,14 +20,17 @@ class BaseFormTableSchema(BaseModel):
 class BaseFormGet(BaseModel):
     id: int
     status: FormStatusEnum
-    created_by: UserGet = Field(validation_alias='created_by_user')
+    created_by: Optional[UserGet] = Field(default=None, validation_alias='created_by_user')
     created_at: datetime
-    updated_by: UserGet = Field(validation_alias='updated_by_user')
+    updated_by: Optional[UserGet] = Field(default=None, validation_alias='updated_by_user')
     updated_at: datetime
 
 
-class BaseFormPatch(BaseModel):
+class UserFormPatch(BaseModel):
     status: FormStatusEnum
+    project_id: Optional[int] = Field(default=None)
+    project_position: Optional[PositionEnum] = Field(default=None)
+    submit_nodes: Optional[list[UserSubmitGet]] = Field(default=None)
 
 
 class UserFormTableSchema(BaseModel):
