@@ -7,8 +7,10 @@ from starlette.responses import Response
 from userapp.api.routes.security import check_is_admin, check_is_authenticated, get_user_from_cookie
 from userapp.api.util import create_one_endpoint, list_endpoint, list_select_stmt, update_one_endpoint
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
-from userapp.core.models.tables import BaseForm as BaseFormTable, User as UserTable, UserForm as UserFormTable
+from userapp.core.models.tables import BaseForm as BaseFormTable, Project as ProjectTable, SubmitNode as SubmitNodeTable, User as UserTable, UserForm as UserFormTable, UserProject, UserSubmit
 from userapp.core.schemas.forms import BaseFormGet, UserFormGet, UserFormPost, UserFormPatch, BaseFormTableSchema, UserFormTableSchema
+from userapp.core.schemas.user_project import UserProjectTableSchema
+from userapp.core.schemas.user_submit import UserSubmitTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
@@ -24,22 +26,82 @@ router = APIRouter(
 )
 
 
-# Eagerly load created_by_user and updated_by_user to avoid async issues
-_base_form_load_options = [
-    selectinload(BaseFormTable.created_by_user),
-    selectinload(BaseFormTable.updated_by_user),
-]
-
-
 async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
-    user_form = await session.get(UserFormTable, form_id)
+    user_form = await session.scalar(
+        select(UserFormTable)
+        .where(UserFormTable.id == form_id)
+    )
     if user_form is None:
-        raise ValueError(f"User form with id {form_id} not found")
-    
-    if not (form.project_id and form.project_position and form.submit_nodes):
-        raise ValueError("project_id and project_position must be provided to accept a user form")
+        raise HTTPException(status_code=404, detail=f"User form with id {form_id} not found")
 
-    # set active=true
+    if not (form.project_id and form.project_position and form.submit_nodes):
+        raise HTTPException(
+            status_code=400,
+            detail="project_id, project_position, and submit_nodes must be provided to accept a user form",
+        )
+
+    if user_form.base_form.created_by is None:
+        raise HTTPException(status_code=404, detail=f"Base form with id {form_id} not found")
+
+    user = user_form.base_form.created_by_user
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User with id {user_form.base_form.created_by} not found")
+
+    project = await session.get(ProjectTable, form.project_id)
+    if project is None:
+        raise HTTPException(status_code=400, detail=f"Project with id {form.project_id} does not exist")
+
+    submit_nodes_result = await session.execute(
+        select(SubmitNodeTable).where(SubmitNodeTable.name.in_(form.submit_nodes))
+    )
+    submit_nodes = submit_nodes_result.scalars().all()
+    submit_nodes_by_name = {submit_node.name: submit_node for submit_node in submit_nodes}
+    missing_submit_nodes = [submit_node_name for submit_node_name in form.submit_nodes if submit_node_name not in submit_nodes_by_name]
+    if missing_submit_nodes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Submit nodes not found: {', '.join(missing_submit_nodes)}",
+        )
+
+    user.active = True
+    user.position = form.project_position
+
+    existing_user_project = await session.scalar(
+        select(UserProject).where(
+            UserProject.user_id == user.id,
+            UserProject.project_id == form.project_id,
+        )
+    )
+    if existing_user_project is None:
+        await create_one_endpoint(
+            session,
+            UserProject,
+            UserProjectTableSchema(
+                user_id=user.id,
+                project_id=form.project_id,
+                role=None,
+                is_primary=False,
+            ),
+        )
+
+    existing_submit_node_ids = set(await session.scalars(
+        select(UserSubmit.submit_node_id).where(UserSubmit.user_id == user.id)
+    ))
+    for submit_node_name in form.submit_nodes:
+        submit_node = submit_nodes_by_name[submit_node_name]
+        if submit_node.id in existing_submit_node_ids:
+            continue
+
+        for for_auth_netid in [True, False]:
+            await create_one_endpoint(
+                session,
+                UserSubmit,
+                UserSubmitTableSchema(
+                    user_id=user.id,
+                    submit_node_id=submit_node.id,
+                    for_auth_netid=for_auth_netid,
+                ),
+            )
 
 
 form_triggers = {
@@ -69,7 +131,6 @@ async def _get_user_application(session: AsyncSession, form_id: int) -> UserForm
         select(BaseFormTable, UserFormTable)
         .join(UserFormTable, BaseFormTable.id == UserFormTable.id)
         .where(BaseFormTable.id == form_id)
-        .options(*_base_form_load_options)
     )
     result = await session.execute(select_stmt)
     row = result.one_or_none()
@@ -89,6 +150,9 @@ async def get_forms(
     session=Depends(session_generator),
     _=Depends(check_is_admin),
 ) -> list[BaseFormGet]:
+    if not any(value.startswith("order_by.") for _, value in filter_query_params):
+        filter_query_params.append(("id", "order_by.desc"))
+
     return await list_endpoint(
         session,
         BaseFormTable,
@@ -96,7 +160,6 @@ async def get_forms(
         filter_query_params,
         page,
         page_size,
-        load_options=_base_form_load_options,
     )
 
 
@@ -109,6 +172,9 @@ async def get_user_applications(
     session=Depends(session_generator),
     _=Depends(check_is_admin),
 ) -> list[UserFormGet]:
+    if not any(value.startswith("order_by.") for _, value in filter_query_params):
+        filter_query_params.append(("id", "order_by.desc"))
+
     return await list_select_stmt(
         session=session,
         select_stmt=(
@@ -121,7 +187,6 @@ async def get_user_applications(
         filter_query_params=filter_query_params,
         page=page,
         page_size=page_size,
-        load_options=_base_form_load_options,
         row_mapper=lambda row: _serialize_user_application(row[0], row[1]),
     )
 
@@ -148,7 +213,6 @@ async def create_user_form(
         session,
         BaseFormTable,
         base_form_schema,
-        load_options=_base_form_load_options,
     )
 
     user_form_schema = UserFormTableSchema(
@@ -193,7 +257,7 @@ async def update_form_status(
 
     trigger = form_triggers.get(transition_key)
     if trigger:
-        trigger(session, base_form.id, form)
+        await trigger(session, base_form.id, form)
 
     session.expire(base_form)
     return await _get_user_application(session, form_id)

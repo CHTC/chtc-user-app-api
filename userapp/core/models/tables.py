@@ -243,7 +243,6 @@ class BaseForm(Base):
         lazy="selectin",
     )
 
-
 class UserForm(Base):
     __tablename__ = 'user_form'
     # TODO: Extend this model with project, project role, submit nodes, and
@@ -253,6 +252,11 @@ class UserForm(Base):
     pi_name = Column(String(255), nullable=True)
     pi_email = Column(String(255), nullable=True)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
+
+    base_form: Mapped["BaseForm"] = relationship(
+        "BaseForm",
+        lazy="selectin",
+    )
 
     # must either provide (pi_id) or (pi_name and pi_email) but not both
     __table_args__ = (
