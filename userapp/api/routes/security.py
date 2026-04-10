@@ -440,8 +440,34 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
     result = await session.execute(select(UserTable).where(UserTable.netid == netid))
     user = result.scalars().first()
 
+    # If there is no user, create one
     if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
+        # Call out to the userinfo endpoint with the access token
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                user_info_resp = await client.get(
+                    oidc_config["userinfo_endpoint"],
+                    headers={
+                        "Authorization": f"Bearer {token_data['access_token']}"
+                    },
+                )
+                user_info_resp.raise_for_status()
+                user_info = user_info_resp.json()
+                print(user_info)
+
+                user = UserTable(
+                    # name is required so fallback to netid if no name is found
+                    name=user_info.get("name") or user_info.get("sub"),
+                    email1=user_info["email"],
+                    netid=user_info.get("sub"),
+                    active=False,
+                    is_admin=False,
+                )
+                session.add(user)
+                await session.flush()
+                await session.refresh(user)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to fetch user info from OIDC provider")
 
     # Determine where to send the user after login
     next_path = state_payload.get("next_path") if state_payload else None

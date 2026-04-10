@@ -19,3 +19,12 @@ class HttpRequestMethodEnum(Enum):
     PUT = "PUT"
     PATCH = "PATCH"
     DELETE = "DELETE"
+
+class FormTypeEnum(Enum):
+    USER = "USER"
+    PROJECT = "PROJECT"
+
+class FormStatusEnum(Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    DENIED = "DENIED"

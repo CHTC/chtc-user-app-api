@@ -1,11 +1,11 @@
 from typing import List, Optional
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
+from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
     Table, Index
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, HttpRequestMethodEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
@@ -219,3 +219,44 @@ class Access(Base):
     payload = Column(String(255), nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
     expires_at = Column(TIMESTAMP)
+
+
+class BaseForm(Base):
+    __tablename__ = 'forms'
+    id = Column(Integer, primary_key=True, index=True)
+    form_type = Column(SQLEnum(FormTypeEnum, name="form_type_enum"), nullable=False)
+    status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"), nullable=False, server_default=FormStatusEnum.PENDING.value)
+    created_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    created_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[created_by],
+        lazy="selectin",
+    )
+
+    updated_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[updated_by],
+        lazy="selectin",
+    )
+
+class UserForm(Base):
+    __tablename__ = 'user_form'
+    id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
+    pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    pi_name = Column(String(255), nullable=True)
+    pi_email = Column(String(255), nullable=True)
+    position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
+
+    base_form: Mapped["BaseForm"] = relationship(
+        "BaseForm",
+        lazy="selectin",
+    )
+
+    # must either provide (pi_id) or (pi_name and pi_email) but not both
+    __table_args__ = (
+        CheckConstraint("((pi_id IS NOT NULL AND (pi_name IS NULL AND pi_email IS NULL)) OR (pi_id IS NULL AND (pi_name IS NOT NULL AND pi_email IS NOT NULL)))", name="ck_user_form_pi_info"),
+    )
