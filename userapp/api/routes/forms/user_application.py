@@ -5,26 +5,30 @@ from sqlalchemy.orm import selectinload
 from starlette.responses import Response
 
 from userapp.api.routes.security import check_is_admin, check_is_authenticated, get_user_from_cookie
-from userapp.api.util import create_one_endpoint, list_endpoint, list_select_stmt, update_one_endpoint
+from userapp.api.util import create_one_endpoint, list_endpoint, list_select_stmt, update_one_endpoint, get_one_endpoint
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
-from userapp.core.models.tables import BaseForm as BaseFormTable, Project as ProjectTable, SubmitNode as SubmitNodeTable, User as UserTable, UserForm as UserFormTable, UserProject, UserSubmit
-from userapp.core.schemas.forms import BaseFormGet, UserFormGet, UserFormPost, UserFormPatch, BaseFormTableSchema, UserFormTableSchema
+from userapp.core.models.tables import BaseForm as BaseFormTable, Project as ProjectTable, \
+    SubmitNode as SubmitNodeTable, User as UserTable, UserForm as UserFormTable, UserProject, UserSubmit
+from userapp.core.models.views import UserApplicationView as UserApplicationViewTable
+from userapp.core.schemas.general import UserApplicationView as UserApplicationViewSchema
+from userapp.core.schemas.forms import BaseFormTableSchema
+from userapp.core.schemas.user_application_form import UserFormGet, UserFormPost, UserFormPatch, UserFormTableSchema
 from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.core.schemas.user_submit import UserSubmitTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
 
+UserApplicationViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
+
 router = APIRouter(
-    prefix="/forms",
-    tags=["Forms"],
+    prefix="/user-applications",
     responses={
         404: {
             "description": "Not found"
         }
     }
 )
-
 
 async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
     user_form = await session.scalar(
@@ -56,7 +60,8 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
     )
     submit_nodes = submit_nodes_result.scalars().all()
     submit_nodes_by_name = {submit_node.name: submit_node for submit_node in submit_nodes}
-    missing_submit_nodes = [submit_node_name for submit_node_name in form.submit_nodes if submit_node_name not in submit_nodes_by_name]
+    missing_submit_nodes = [submit_node_name for submit_node_name in form.submit_nodes if
+                            submit_node_name not in submit_nodes_by_name]
     if missing_submit_nodes:
         raise HTTPException(
             status_code=400,
@@ -110,79 +115,36 @@ form_triggers = {
     (FormTypeEnum.USER, FormStatusEnum.DENIED, FormStatusEnum.APPROVED): on_user_form_accept,
 }
 
-
-def _serialize_user_application(base_form: BaseFormTable, user_form: UserFormTable) -> UserFormGet:
-    return UserFormGet.model_construct(
-        id=base_form.id,
-        status=base_form.status,
-        created_by=UserGet.model_validate(base_form.created_by_user) if base_form.created_by_user else None,
-        created_at=base_form.created_at,
-        updated_by=UserGet.model_validate(base_form.updated_by_user) if base_form.updated_by_user else None,
-        updated_at=base_form.updated_at,
-        pi_id=user_form.pi_id,
-        pi_name=user_form.pi_name,
-        pi_email=user_form.pi_email,
-        position=user_form.position,
-    )
-
-
 @router.get("")
-async def get_forms(
-    response: Response,
-    page: int = 0,
-    page_size: int = 100,
-    filter_query_params=Depends(get_filter_query_params),
-    session=Depends(session_generator),
-    _=Depends(check_is_admin),
-) -> list[BaseFormGet]:
+async def get_user_applications(
+        response: Response,
+        page: int = 0,
+        page_size: int = 100,
+        filter_query_params=Depends(get_filter_query_params),
+        session=Depends(session_generator),
+        _=Depends(check_is_admin),
+) -> list[UserApplicationViewSchema]:
+
     if not any(value.startswith("order_by.") for _, value in filter_query_params):
         filter_query_params.append(("id", "order_by.desc"))
 
     return await list_endpoint(
-        session,
-        BaseFormTable,
-        response,
-        filter_query_params,
-        page,
-        page_size,
-    )
-
-
-@router.get("/user-applications")
-async def get_user_applications(
-    response: Response,
-    page: int = 0,
-    page_size: int = 100,
-    filter_query_params=Depends(get_filter_query_params),
-    session=Depends(session_generator),
-    _=Depends(check_is_admin),
-) -> list[UserFormGet]:
-    if not any(value.startswith("order_by.") for _, value in filter_query_params):
-        filter_query_params.append(("id", "order_by.desc"))
-
-    return await list_select_stmt(
         session=session,
-        select_stmt=(
-            select(BaseFormTable, UserFormTable)
-            .join(UserFormTable, BaseFormTable.id == UserFormTable.id)
-            .where(BaseFormTable.form_type == FormTypeEnum.USER)
-        ),
-        model=BaseFormTable,
+        model=UserApplicationViewTable,
         response=response,
         filter_query_params=filter_query_params,
         page=page,
-        page_size=page_size,
-        row_mapper=lambda row: _serialize_user_application(row[0], row[1]),
+        page_size=page_size
     )
 
 
-@router.post("/user-applications", status_code=201)
+@router.post("", status_code=201)
 async def create_user_form(
-    form: UserFormPost,
-    session=Depends(session_generator),
-    user_token=Depends(get_user_from_cookie),
-    _=Depends(check_is_authenticated)
-) -> UserFormGet:
+        form: UserFormPost,
+        session=Depends(session_generator),
+        user_token=Depends(get_user_from_cookie),
+        _=Depends(check_is_authenticated)
+) -> UserApplicationViewSchema:
     if form.pi_id is not None:
         pi = await session.get(UserTable, form.pi_id)
         if pi is None:
@@ -193,12 +155,30 @@ async def create_user_form(
         created_by=user_token.user_id,
         updated_by=user_token.user_id,
     )
-    
+
     created_base_form: BaseFormTable = await create_one_endpoint(
         session,
         BaseFormTable,
         base_form_schema,
     )
+
+    form_content = {
+        "how_chtc_can_help": form.how_chtc_can_help,
+        "computing_type": form.computing_type,
+        "mentor_name": form.mentor_name,
+        "mentor_email": form.mentor_email,
+        "marketing_attribution": form.marketing_attribution,
+        "research_computing_area": form.research_computing_area,
+        "software_link": form.software_link,
+        "cpu_cores": form.cpu_cores,
+        "memory_gb": form.memory_gb,
+        "disk_space_gb": form.disk_space_gb,
+        "calculation_runtime_hours": form.calculation_runtime_hours,
+        "gpu_type": form.gpu_type,
+        "calculation_quantity": form.calculation_quantity,
+        "special_access": form.special_access,
+        "extra_info": form.extra_info,
+    }
 
     user_form_schema = UserFormTableSchema(
         id=created_base_form.id,
@@ -206,24 +186,29 @@ async def create_user_form(
         pi_name=form.pi_name,
         pi_email=form.pi_email,
         position=form.position,
+        content=form_content
     )
-    created_user_form: UserFormTable = await create_one_endpoint(session, UserFormTable, user_form_schema)
+    await create_one_endpoint(session, UserFormTable, user_form_schema)
 
-    return _serialize_user_application(created_base_form, created_user_form)
+    # Flush session so we can get all the fields when we send the objects back as a view
+    session.flush()
+
+    user_application_form = await get_one_endpoint(session, UserApplicationViewTable, created_base_form.id)
+    return user_application_form
 
 
-@router.patch("/user-applications/{form_id}", status_code=200)
+@router.patch("/{form_id}", status_code=200)
 async def update_form_status(
-    form_id: int,
-    form: UserFormPatch,
-    session=Depends(session_generator),
-    user_token=Depends(get_user_from_cookie),
-    _=Depends(check_is_admin),
-) -> UserFormGet:
+        form_id: int,
+        form: UserFormPatch,
+        session=Depends(session_generator),
+        user_token=Depends(get_user_from_cookie),
+        _=Depends(check_is_admin),
+) -> UserApplicationViewSchema:
     original_form = await session.get(BaseFormTable, form_id)
     if original_form is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     original_status = original_form.status
     if original_status == FormStatusEnum.APPROVED:
         raise HTTPException(status_code=400, detail="Approved forms cannot be modified")
@@ -248,4 +233,4 @@ async def update_form_status(
     if user_form is None:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    return _serialize_user_application(user_form.base_form, user_form)
+    return await get_one_endpoint(session, UserApplicationViewTable, base_form.id)

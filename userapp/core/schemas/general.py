@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field
 
-from userapp.core.models.enum import RoleEnum, PositionEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum
 
 
 class BaseModel(PydanticBaseModel):
@@ -64,3 +64,23 @@ class JoinedProjectView(BaseModel):
     def auth_username(self) -> bool:
         """Backwards compatibility: always returns False"""
         return False
+
+class UserApplicationView(BaseModel):
+    # BaseForm fields
+    id: int
+    form_type: FormTypeEnum
+    status: FormStatusEnum
+    created_at: datetime
+    updated_at: datetime
+
+    # UserForm fields
+    pi_id: Optional[int] = Field(default=None)
+    pi_name: Optional[str] = Field(default=None)
+    pi_email: Optional[EmailStr] = Field(default=None)
+    position: Optional[PositionEnum] = Field(default=None)
+    content: Optional[dict] = Field(default=None)
+
+    # Relationships
+    created_by: Optional["UserGet"] = Field(default=None, validation_alias='created_by_user')
+    updated_by: Optional["UserGet"] = Field(default=None, validation_alias='updated_by_user')
+    pi_user: Optional["UserGet"] = Field(default=None, validation_alias='pi_user')
