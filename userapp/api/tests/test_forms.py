@@ -114,6 +114,17 @@ class TestUserFormPost:
         )
 
 
+    def test_create_rejects_missing_required_fields(self, nonadmin_client: Client, user_factory, project_factory):
+
+        user_form = user_form_data_f()
+        user_form['how_chtc_can_help'] = None
+
+        response = nonadmin_client.post("/forms/user-applications", json=user_form)
+
+        assert response.status_code != 201, (
+            f"Authenticated POST /forms/user-applications shouldn't return 201, got {response.status_code}: {response.text}"
+        )
+
 class TestFormGet:
 
     def test_nonadmin_cannot_get_forms(self, nonadmin_client: Client):

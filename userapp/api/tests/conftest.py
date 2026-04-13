@@ -102,7 +102,7 @@ def project_factory(existing_admin_client: Client) -> Callable[[str], TestClient
         admin_user_response = existing_admin_client.get("/me").json()
         project_response = existing_admin_client.post(
             "/projects",
-            json=project_data_f(staff1=admin_user_response['user_id'])
+            json=project_data_f(staff1=admin_user_response['id'])
         )
         assert project_response.status_code == 201, f"Creating a project should return a 201 status code, instead got {project_response.text}"
         return project_response.json()

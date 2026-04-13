@@ -9,6 +9,16 @@ class TestSecurity:
 
         assert response.status_code == 401
 
+    def test_authenticated_request(self, nonadmin_client, user):
+        """Test getting users from the database"""
+
+        response = nonadmin_client.get("/me")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['id'] == user['id']
+
+
     def test_logout(self, admin_client):
         """Test logging out"""
 
