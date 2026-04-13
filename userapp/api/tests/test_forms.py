@@ -4,24 +4,7 @@ from unittest.mock import AsyncMock
 from httpx import Client
 from userapp.api.routes import forms as forms_routes
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
-
-
-def user_form_data_f() -> dict:
-    return {
-        "pi_id": None,
-        "pi_name": "John Doe",
-        "pi_email": "johndoe@wisc.edu",
-        "position": "POSTDOC"
-    }
-
-
-def user_form_approval_data_f(project_id: int, submit_nodes: list[str]) -> dict:
-    return {
-        "status": "APPROVED",
-        "project_id": project_id,
-        "project_position": "POSTDOC",
-        "submit_nodes": submit_nodes,
-    }
+from userapp.api.tests.fake_data import user_form_data_f, user_form_approval_data_f
 
 
 def create_submit_node(admin_client: Client) -> dict:

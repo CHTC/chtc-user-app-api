@@ -1,9 +1,11 @@
 from typing import List, Optional
 
-from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, func, VARCHAR, \
-    Table, Index
+from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, \
+    func, VARCHAR, \
+    Table, Index, null
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum
 from userapp.core.models.main import Base
@@ -246,10 +248,15 @@ class BaseForm(Base):
 class UserForm(Base):
     __tablename__ = 'user_form'
     id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
+
+    # These can be tied into the existing data system
     pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
     pi_name = Column(String(255), nullable=True)
     pi_email = Column(String(255), nullable=True)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
+
+    # This content cannot, things like "What is your favorite OS?"
+    content = Column(JSONB, nullable=True, default=None)
 
     base_form: Mapped["BaseForm"] = relationship(
         "BaseForm",

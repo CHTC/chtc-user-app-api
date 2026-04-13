@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, relationship
 
-from userapp.core.models.enum import RoleEnum, PositionEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum
 from userapp.core.models.main import Base
 
 
@@ -73,3 +73,49 @@ class UserSubmitNodesView(Base):
     hpc_joblimit = Column(Integer)
     hpc_corelimit = Column(Integer)
     hpc_fairshare = Column(Integer)
+
+
+class UserApplicationView(Base):
+    __tablename__ = 'user_applications'
+    __table_args__ = {'info': dict(is_view=True)}
+
+    # BaseForm columns
+    id = Column(Integer, primary_key=True)
+    form_type = Column(SQLEnum(FormTypeEnum, name="form_type_enum"))
+    status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"))
+    created_by = Column(Integer)
+    created_at = Column(TIMESTAMP)
+    updated_by = Column(Integer)
+    updated_at = Column(TIMESTAMP)
+
+    # UserForm columns
+    pi_id = Column(Integer)
+    pi_name = Column(String(255))
+    pi_email = Column(String(255))
+    position = Column(SQLEnum(PositionEnum, name="position_enum"))
+    content = Column(String)  # JSONB stored as text in view
+
+    # Relationships for foreign keys
+    created_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="UserApplicationView.created_by==foreign(User.id)",
+        lazy="selectin",
+        viewonly=True,
+        foreign_keys="[UserApplicationView.created_by]",
+    )
+    
+    updated_by_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="UserApplicationView.updated_by==foreign(User.id)",
+        lazy="selectin",
+        viewonly=True,
+        foreign_keys="[UserApplicationView.updated_by]",
+    )
+    
+    pi_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="UserApplicationView.pi_id==foreign(User.id)",
+        lazy="selectin",
+        viewonly=True,
+        foreign_keys="[UserApplicationView.pi_id]",
+    )

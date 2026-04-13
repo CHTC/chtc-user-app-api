@@ -47,7 +47,6 @@ async def list_select_stmt(
     page: int = 0,
     page_size: int = 100,
     load_options=None,
-    row_mapper: Callable[[Any], Any] | None = None,
 ):
     """Generic list endpoint generator"""
 
@@ -74,9 +73,6 @@ async def list_select_stmt(
     num_results_total = await session.execute(count_stmt)
     response.headers["X-Total-Count"] = str(num_results_total.scalar())
 
-    if row_mapper:
-        return [row_mapper(row) for row in results]
-
     # Depending on the select statement, if you use columns you can return directly, if you use models you need to extract from Row
     return [x[0] for x in results]
 
@@ -88,8 +84,7 @@ async def list_endpoint(
     filter_query_params,
     page: int = 0,
     page_size: int = 100,
-    load_options=None,
-    row_mapper: Callable[[Any], Any] | None = None,
+    load_options=None
 ):
     """Generic list endpoint generator"""
     return await list_select_stmt(
@@ -101,7 +96,6 @@ async def list_endpoint(
         page_size=page_size,
         session=session,
         load_options=load_options,
-        row_mapper=row_mapper,
     )
 
 
