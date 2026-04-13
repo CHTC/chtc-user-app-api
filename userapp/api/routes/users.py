@@ -18,6 +18,7 @@ from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
     UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
+from userapp.api.load_options import user_load_options
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
@@ -34,19 +35,10 @@ router = APIRouter(
     }
 )
 
-# Load options for users to load in nested relationships
-_user_load_options = [
-    selectinload(UserTable.notes).joinedload(NoteTable.author),
-    selectinload(UserTable.groups).joinedload(Group.point_of_contact_user),
-    selectinload(UserTable.projects).selectinload(JoinedProjectViewTable.staff1_user),
-    selectinload(UserTable.projects).selectinload(JoinedProjectViewTable.staff2_user),
-    selectinload(UserTable.submit_nodes)
-]
-
 
 @router.get("")
 async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> list[UserGetFull]:
-    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=_user_load_options)
+    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=user_load_options)
 
 
 @router.delete("/{user_id}", status_code=204)
@@ -56,7 +48,7 @@ async def delete_user(user_id: int, session=Depends(session_generator), check_is
 
 @router.get("/{user_id}")
 async def get_user(user_id: int, session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> UserGetFull:
-    return await get_one_endpoint(session, UserTable, user_id, load_options=_user_load_options)
+    return await get_one_endpoint(session, UserTable, user_id, load_options=user_load_options)
 
 
 @router.post("", status_code=201)
@@ -64,7 +56,7 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
 
     # Create the user
     user_data_only = UserTableSchema(**user.model_dump())
-    created_user = await create_one_endpoint(session, UserTable, user_data_only, load_options=_user_load_options)
+    created_user = await create_one_endpoint(session, UserTable, user_data_only, load_options=user_load_options)
     created_user_id = created_user.id
 
     # Create the project association
@@ -88,7 +80,7 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
 
     # Expire the user to force a fresh load from the database
     session.expire(created_user)
-    created_user = await get_one_endpoint(session, UserTable, created_user_id, load_options=_user_load_options)
+    created_user = await get_one_endpoint(session, UserTable, created_user_id, load_options=user_load_options)
 
     return created_user
 
@@ -101,13 +93,13 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         user_update_schema = RestrictedUserPatch(
             **user.model_dump(exclude_unset=True)
         )
-        return await update_one_endpoint(session, UserTable, user_id, user_update_schema, load_options=_user_load_options)
+        return await update_one_endpoint(session, UserTable, user_id, user_update_schema, load_options=user_load_options)
 
     elif is_admin:
 
         # Update user
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
-        updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=_user_load_options)
+        updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=user_load_options)
 
         # Update Submit Nodes if patched
         if user.submit_nodes is not None:
@@ -140,7 +132,7 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
 
         # Expire the instance to force a fresh load from the database
         session.expire(updated_user)
-        updated_user = await get_one_endpoint(session, UserTable, user_id, load_options=_user_load_options)
+        updated_user = await get_one_endpoint(session, UserTable, user_id, load_options=user_load_options)
 
         return updated_user
 

@@ -15,7 +15,12 @@ from sqlalchemy.future import select
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
+from userapp.api.util import get_one_endpoint
 from userapp.core.models.tables import User as UserTable, Token
+from userapp.core.schemas.note import NoteGet
+from userapp.core.schemas.users import UserGetFull, UserGet
+from userapp.core.schemas.general import JoinedProjectView
+from userapp.api.load_options import user_load_options
 from userapp.db import session_generator
 
 pwd_context = CryptContext(
@@ -506,12 +511,10 @@ async def logout_user(response: Response):
 
 @router.get("/me")
 @router.post("/me", include_in_schema=False) # Added for testing only
-async def get_current_user(user_token=Depends(get_user_from_cookie), api_token=Depends(get_auth_from_api_token)):
+async def get_current_user(user_token=Depends(get_user_from_cookie), session=Depends(session_generator)) -> UserGetFull:
     """Get the current user"""
 
     if user_token:
-        return {"is_admin": user_token.is_admin, "user_id": user_token.user_id}
-    elif api_token:
-        return {"token_id": api_token.token_id, "is_admin": True}
+        return await get_one_endpoint(session, UserTable, user_token.user_id, load_options=user_load_options)
     else:
         raise HTTPException(status_code=401, detail="Not authenticated")

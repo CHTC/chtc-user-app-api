@@ -33,7 +33,7 @@ class TestSecurity:
 
         assert response.status_code == 200
         data = response.json()
-        assert data['user_id'] == user['id']
+        assert data['id'] == user['id']
 
     def test_hash_password(self):
         """Test that password hashing and verification works correctly"""
