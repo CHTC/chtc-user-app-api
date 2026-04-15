@@ -10,7 +10,7 @@ from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
 from userapp.core.models.tables import BaseForm as BaseFormTable, Project as ProjectTable, \
     SubmitNode as SubmitNodeTable, User as UserTable, UserForm as UserFormTable, UserProject, UserSubmit
 from userapp.core.models.views import UserApplicationView as UserApplicationViewTable
-from userapp.core.schemas.general import UserApplicationView as UserApplicationViewSchema
+from userapp.core.schemas.general import UserApplicationViewFull as UserApplicationViewFullSchema
 from userapp.core.schemas.forms import BaseFormTableSchema
 from userapp.core.schemas.user_application_form import UserFormGet, UserFormPost, UserFormPatch, UserFormTableSchema
 from userapp.core.schemas.user_project import UserProjectTableSchema
@@ -19,7 +19,7 @@ from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
 
-UserApplicationViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
+UserApplicationViewFullSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
     prefix="/user-applications",
@@ -123,7 +123,7 @@ async def get_user_applications(
         filter_query_params=Depends(get_filter_query_params),
         session=Depends(session_generator),
         _=Depends(check_is_admin),
-) -> list[UserApplicationViewSchema]:
+) -> list[UserApplicationViewFullSchema]:
 
     if not any(value.startswith("order_by.") for _, value in filter_query_params):
         filter_query_params.append(("id", "order_by.desc"))
@@ -144,7 +144,7 @@ async def create_user_form(
         session=Depends(session_generator),
         user_token=Depends(get_user_from_cookie),
         _=Depends(check_is_authenticated)
-) -> UserApplicationViewSchema:
+) -> UserApplicationViewFullSchema:
     if form.pi_id is not None:
         pi = await session.get(UserTable, form.pi_id)
         if pi is None:
@@ -204,7 +204,7 @@ async def update_form_status(
         session=Depends(session_generator),
         user_token=Depends(get_user_from_cookie),
         _=Depends(check_is_admin),
-) -> UserApplicationViewSchema:
+) -> UserApplicationViewFullSchema:
     original_form = await session.get(BaseFormTable, form_id)
     if original_form is None:
         raise HTTPException(status_code=404, detail="Item not found")

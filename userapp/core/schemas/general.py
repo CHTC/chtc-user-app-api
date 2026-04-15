@@ -80,6 +80,7 @@ class UserApplicationView(BaseModel):
     position: Optional[PositionEnum] = Field(default=None)
     content: Optional[dict] = Field(default=None)
 
+class UserApplicationViewFull(UserApplicationView):
     # Relationships
     created_by: Optional["UserGet"] = Field(default=None, validation_alias='created_by_user')
     updated_by: Optional["UserGet"] = Field(default=None, validation_alias='updated_by_user')
