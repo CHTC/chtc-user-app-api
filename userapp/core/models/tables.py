@@ -11,6 +11,7 @@ from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, Pos
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
+from userapp.core.models.views import UserApplicationView
 
 
 class Group(Base):
@@ -135,6 +136,13 @@ class User(Base):
         foreign_keys="[UserGroup.user_id, UserGroup.group_id]",
         lazy="selectin",
         backref="users"
+    )
+
+    user_forms: Mapped[List[UserApplicationView]] = relationship(
+        "UserApplicationView",
+        primaryjoin="User.id==foreign(UserApplicationView.created_by)",
+        lazy="selectin",
+        viewonly=True,
     )
 
 

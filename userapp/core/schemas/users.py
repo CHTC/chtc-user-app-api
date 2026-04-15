@@ -3,7 +3,7 @@ from typing import Optional, Annotated
 from datetime import datetime
 import re
 
-from userapp.core.schemas.general import JoinedProjectView
+from userapp.core.schemas.general import JoinedProjectView, UserApplicationView as UserApplicationViewSchema
 from userapp.core.schemas.note import NoteGet
 from userapp.core.schemas.user_submit import UserSubmitGet, UserSubmitPost
 from userapp.core.schemas.general import BaseModel
@@ -73,6 +73,7 @@ class UserGetFull(UserGet):
     submit_nodes: list["UserSubmitGet"] = Field(default=[])
     projects: list["JoinedProjectView"] = Field(default=[])
     groups: list["GroupGet"] = Field(default=[])
+    user_forms: list["UserApplicationViewSchema"] = Field(default=[])
 
 class UserPost(BaseModel):
 
