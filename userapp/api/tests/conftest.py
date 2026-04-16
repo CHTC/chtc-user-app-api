@@ -190,7 +190,9 @@ def user(existing_admin_client: Client, project_factory: Callable, group_factory
     user = existing_admin_client.get(f"/users/{user['id']}").json()
 
     yield user
+    
     existing_admin_client.delete(f"/users/{user['id']}")
+    existing_admin_client.delete(f"/groups/{group['id']}")
 
 
 @pytest.fixture

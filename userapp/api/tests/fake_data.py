@@ -90,7 +90,7 @@ def user_form_approval_data_f(project_id: int, submit_nodes: list[UserSubmitPost
     return {
         "status": "APPROVED",
         "project_id": project_id,
-        "project_position": RoleEnum.MEMBER.value,
+        "user_position": PositionEnum.GRAD_STUDENT.value,
         "submit_nodes": submit_nodes,
     }
 

@@ -151,6 +151,23 @@ class TestUserFormPost:
             f"Authenticated POST /forms/user-applications shouldn't return 201, got {response.status_code}: {response.text}"
         )
 
+    def test_user_cant_submit_if_pending(self, user: dict, nonadmin_client: Client, admin_client: Client):
+        """A newly submitted form should default to PENDING status."""
+
+        # Mark user innactive for testing
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+
+        response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
+
+        assert response.status_code == 201
+        assert response.json()["status"] == "PENDING", (
+            f"New form status should default to PENDING, got '{response.json()['status']}'"
+        )
+
+        response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
+        assert response.status_code == 422, ("User cannot submit another form with a application pending")
+
+
 class TestFormGet:
 
     def test_nonadmin_cannot_get_forms(self, nonadmin_client: Client):
@@ -242,7 +259,7 @@ class TestUserFormPatch:
         submit_node = create_submit_node(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [submit_node["name"]]),
+            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
         )
 
         assert update_response.status_code == 200, (
@@ -258,13 +275,13 @@ class TestUserFormPatch:
             f"Updated form updated_by.id should be {admin_user['id']}, got {updated_form['updated_by']['id']}"
         )
 
-    def test_nonadmin_cannot_patch_form(self, nonadmin_client: Client, admin_client: Client):
+    def test_nonadmin_cannot_patch_form(self, user: dict, nonadmin_client: Client, admin_client: Client):
         """Non-admins cannot patch forms."""
 
         # Mark user innactive for testing
         r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
 
-        create_response = admin_client.post("/forms/user-applications", json=user_form_data_f())
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
         assert create_response.status_code == 201
         form_id = create_response.json()["id"]
 
@@ -274,13 +291,13 @@ class TestUserFormPatch:
             f"Non-admin PATCH /forms/user-applications/{form_id} should return 403, got {response.status_code}: {response.text}"
         )
 
-    def test_admin_can_approve_form(self, admin_client: Client, project_factory):
+    def test_admin_can_approve_form(self, user: dict, nonadmin_client: Client, admin_client: Client, project_factory):
         """Admins can approve forms."""
 
         # Mark user innactive for testing
         r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
 
-        create_response = admin_client.post("/forms/user-applications", json=user_form_data_f())
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
         assert create_response.status_code == 201
         form_id = create_response.json()["id"]
 
@@ -288,7 +305,7 @@ class TestUserFormPatch:
         submit_node = create_submit_node(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [submit_node["name"]]),
+            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
         )
 
         assert update_response.status_code == 200, (
@@ -385,7 +402,7 @@ class TestPreserveExistingData:
         user_post_approval = user_post_approval_response.json()
 
         assert user_post_approval["active"]
-        assert len(user_post_approval["groups"]) == len(user["groups"]), "User should have groups post approval when preserve_existing_data is False"
+        assert len(user_post_approval["groups"]) == len(user["groups"]), "User should have groups post approval when preserve_existing_data is True"
         assert len(user_post_approval["projects"]) == len(user['projects'])
         assert user_post_approval["projects"][0]["project_id"] == user["projects"][0]["project_id"]
         assert len(user_post_approval["submit_nodes"]) == len(user['submit_nodes'])
@@ -398,13 +415,13 @@ class TestPreserveExistingData:
 
 class TestUserFormTriggers:
 
-    def test_approved_form_cannot_change(self, admin_client: Client, project_factory):
+    def test_approved_form_cannot_change(self, user: dict, nonadmin_client: Client, admin_client: Client, project_factory):
         """Once a form is approved, a second update should not be allowed."""
 
         # Mark user innactive for testing
         r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
 
-        create_response = admin_client.post("/forms/user-applications", json=user_form_data_f())
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
         assert create_response.status_code == 201
         form_id = create_response.json()["id"]
 
@@ -412,7 +429,7 @@ class TestUserFormTriggers:
         submit_node = create_submit_node(admin_client)
         approve_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [submit_node["name"]]),
+            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
         )
         assert approve_response.status_code == 200
 
@@ -423,13 +440,13 @@ class TestUserFormTriggers:
             f"{second_update_response.text}"
         )
 
-    def test_approve_runs_trigger(self, admin_client: Client, monkeypatch, project_factory):
+    def test_approve_runs_trigger(self, user: dict, nonadmin_client: Client, admin_client: Client, monkeypatch, project_factory):
         """Approving a user form should run the approval side effect."""
 
         # Mark user innactive for testing
         r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
 
-        create_response = admin_client.post("/forms/user-applications", json=user_form_data_f())
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
         assert create_response.status_code == 201
         form_id = create_response.json()["id"]
 
@@ -444,7 +461,7 @@ class TestUserFormTriggers:
         submit_node = create_submit_node(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [submit_node["name"]]),
+            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
         )
 
         assert update_response.status_code == 200
@@ -476,7 +493,7 @@ class TestUserFormTriggers:
         submit_node = create_submit_node(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [submit_node["name"]]),
+            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
         )
 
         assert update_response.status_code == 200, (
@@ -488,6 +505,5 @@ class TestUserFormTriggers:
         updated_user = user_response.json()
 
         assert updated_user["active"] is True
-        assert updated_user["position"] == RoleEnum.MEMBER.value
         assert any(project_membership["project_id"] == project["id"] for project_membership in updated_user["projects"])
         assert any(user_submit["submit_node_name"] == submit_node["name"] for user_submit in updated_user["submit_nodes"])

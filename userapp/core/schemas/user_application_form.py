@@ -13,7 +13,7 @@ class UserFormPatch(BaseModel):
 
     preserve_existing_data: Optional[bool] = Field(default=False)
     project_id: Optional[int] = Field(default=None)
-    project_position: Optional[RoleEnum] = Field(default=None)
+    user_position: Optional[PositionEnum] = Field(default=None)
     submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=None)
 
 
