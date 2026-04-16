@@ -3,16 +3,18 @@ from typing import Optional
 
 from pydantic import Field, model_validator
 
-from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum, RoleEnum
 from userapp.core.schemas.general import BaseModel
-from userapp.core.schemas.users import UserGet
+from userapp.core.schemas.users import UserGet, UserSubmitPost
 
 
 class UserFormPatch(BaseModel):
     status: FormStatusEnum
+
+    preserve_existing_data: Optional[bool] = Field(default=False)
     project_id: Optional[int] = Field(default=None)
-    project_position: Optional[PositionEnum] = Field(default=None)
-    submit_nodes: Optional[list[str]] = Field(default=None)
+    user_position: Optional[PositionEnum] = Field(default=None)
+    submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=None)
 
 
 class UserFormTableSchema(BaseModel):
