@@ -19,6 +19,7 @@ from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTabl
     UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 from userapp.api.load_options import user_load_options
+from userapp.api.routes._util import _patch_user_submit_nodes
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
@@ -103,32 +104,7 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
 
         # Update Submit Nodes if patched
         if user.submit_nodes is not None:
-            for existing_submit_node in updated_user.submit_nodes:
-                if existing_submit_node.submit_node_id not in [sn.submit_node_id for sn in user.submit_nodes]:
-
-                    # I blame the lack of uniformity on the previous db design
-                    delete_stmt = (
-                        UserSubmit.__table__.delete()
-                        .where(UserSubmit.user_id == user_id)
-                        .where(UserSubmit.submit_node_id == existing_submit_node.submit_node_id)
-                    )
-                    await session.execute(delete_stmt)
-
-            # Add Submit Nodes from the update
-            for submit_node in user.submit_nodes:
-
-                if submit_node.submit_node_id in [sn.submit_node_id for sn in updated_user.submit_nodes]:
-                    continue  # Already exists
-
-                # Create nodes for both auth_netid True and False to simplify logic
-                for for_auth_netid in [True, False]:
-
-                    user_submit_model = UserSubmitTableSchema(
-                        user_id=user_id,
-                        for_auth_netid=for_auth_netid,
-                        **submit_node.model_dump(),
-                    )
-                    await create_one_endpoint(session, UserSubmit, user_submit_model)
+            await _patch_user_submit_nodes(session, updated_user, user.submit_nodes)
 
         # Expire the instance to force a fresh load from the database
         session.expire(updated_user)

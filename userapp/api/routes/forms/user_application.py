@@ -12,12 +12,13 @@ from userapp.core.models.tables import BaseForm as BaseFormTable, Project as Pro
 from userapp.core.models.views import UserApplicationView as UserApplicationViewTable
 from userapp.core.schemas.general import UserApplicationViewFull as UserApplicationViewFullSchema
 from userapp.core.schemas.forms import BaseFormTableSchema
-from userapp.core.schemas.user_application_form import UserFormGet, UserFormPost, UserFormPatch, UserFormTableSchema
+from userapp.core.schemas.user_application_form import UserFormPost, UserFormPatch, UserFormTableSchema
 from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.core.schemas.user_submit import UserSubmitTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
+from userapp.api.routes.forms._util import on_user_form_accept
 
 UserApplicationViewFullSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
@@ -29,85 +30,6 @@ router = APIRouter(
         }
     }
 )
-
-async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
-    user_form = await session.scalar(
-        select(UserFormTable)
-        .where(UserFormTable.id == form_id)
-    )
-    if user_form is None:
-        raise HTTPException(status_code=404, detail=f"User form with id {form_id} not found")
-
-    if not (form.project_id and form.project_position and form.submit_nodes):
-        raise HTTPException(
-            status_code=400,
-            detail="project_id, project_position, and submit_nodes must be provided to accept a user form",
-        )
-
-    if user_form.base_form.created_by is None:
-        raise HTTPException(status_code=404, detail=f"Base form with id {form_id} not found")
-
-    user = user_form.base_form.created_by_user
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User with id {user_form.base_form.created_by} not found")
-
-    project = await session.get(ProjectTable, form.project_id)
-    if project is None:
-        raise HTTPException(status_code=400, detail=f"Project with id {form.project_id} does not exist")
-
-    submit_nodes_result = await session.execute(
-        select(SubmitNodeTable).where(SubmitNodeTable.name.in_(form.submit_nodes))
-    )
-    submit_nodes = submit_nodes_result.scalars().all()
-    submit_nodes_by_name = {submit_node.name: submit_node for submit_node in submit_nodes}
-    missing_submit_nodes = [submit_node_name for submit_node_name in form.submit_nodes if
-                            submit_node_name not in submit_nodes_by_name]
-    if missing_submit_nodes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Submit nodes not found: {', '.join(missing_submit_nodes)}",
-        )
-
-    user.active = True
-    user.position = form.project_position
-
-    existing_user_project = await session.scalar(
-        select(UserProject).where(
-            UserProject.user_id == user.id,
-            UserProject.project_id == form.project_id,
-        )
-    )
-    if existing_user_project is None:
-        await create_one_endpoint(
-            session,
-            UserProject,
-            UserProjectTableSchema(
-                user_id=user.id,
-                project_id=form.project_id,
-                role=None,
-                is_primary=False,
-            ),
-        )
-
-    existing_submit_node_ids = set(await session.scalars(
-        select(UserSubmit.submit_node_id).where(UserSubmit.user_id == user.id)
-    ))
-    for submit_node_name in form.submit_nodes:
-        submit_node = submit_nodes_by_name[submit_node_name]
-        if submit_node.id in existing_submit_node_ids:
-            continue
-
-        for for_auth_netid in [True, False]:
-            await create_one_endpoint(
-                session,
-                UserSubmit,
-                UserSubmitTableSchema(
-                    user_id=user.id,
-                    submit_node_id=submit_node.id,
-                    for_auth_netid=for_auth_netid,
-                ),
-            )
-
 
 form_triggers = {
     (FormTypeEnum.USER, FormStatusEnum.PENDING, FormStatusEnum.APPROVED): on_user_form_accept,
@@ -145,23 +67,43 @@ async def create_user_form(
         user_token=Depends(get_user_from_cookie),
         _=Depends(check_is_authenticated)
 ) -> UserApplicationViewFullSchema:
+
+    # Check if this PI exists
     if form.pi_id is not None:
         pi = await session.get(UserTable, form.pi_id)
         if pi is None:
             raise HTTPException(status_code=400, detail=f"PI with id {form.pi_id} does not exist")
 
+    # Check if the user already has a user form in pending state
+    existing_form_result = await session.execute(
+        select(BaseFormTable).where(
+            BaseFormTable.created_by == user_token.user_id,
+            BaseFormTable.status == FormStatusEnum.PENDING,
+            BaseFormTable.form_type == FormTypeEnum.USER,
+        )
+    )
+    existing_form = existing_form_result.scalar()
+    if existing_form is not None:
+        raise HTTPException(status_code=422, detail=f"User already has a pending form with id {existing_form.id}")
+
+    # Check that the user is not already active
+    user = await get_one_endpoint(session, UserTable, user_token.user_id)
+    if user.active:
+        raise HTTPException(status_code=422, detail=f"User is already active")
+
+    # Create the base form
     base_form_schema = BaseFormTableSchema(
         form_type=FormTypeEnum.USER,
         created_by=user_token.user_id,
         updated_by=user_token.user_id,
     )
-
     created_base_form: BaseFormTable = await create_one_endpoint(
         session,
         BaseFormTable,
         base_form_schema,
     )
 
+    # Create the user form
     form_content = {
         "how_chtc_can_help": form.how_chtc_can_help,
         "computing_type": form.computing_type,
@@ -179,7 +121,6 @@ async def create_user_form(
         "special_access": form.special_access,
         "extra_info": form.extra_info,
     }
-
     user_form_schema = UserFormTableSchema(
         id=created_base_form.id,
         pi_id=form.pi_id,
@@ -205,6 +146,7 @@ async def update_form_status(
         user_token=Depends(get_user_from_cookie),
         _=Depends(check_is_admin),
 ) -> UserApplicationViewFullSchema:
+
     original_form = await session.get(BaseFormTable, form_id)
     if original_form is None:
         raise HTTPException(status_code=404, detail="Item not found")

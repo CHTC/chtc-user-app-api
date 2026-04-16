@@ -1,6 +1,7 @@
 from typing import Any, Generator, Callable
 import pytest
 import os
+import random
 
 from httpx import Client
 
@@ -92,6 +93,28 @@ def token_client(token: dict) -> Callable[[str], TestClient]:
 
     return _make_client
 
+@pytest.fixture
+def group_factory(existing_admin_client: Client) -> Callable:
+    """Fixture to create and return a group"""
+
+    def _create_group() -> dict:
+        group_response = existing_admin_client.post(
+            "/groups",
+            json={"name": f"Test_Group_{random.randint(1, 10000000)}"}
+        )
+        assert group_response.status_code == 201, f"Creating a group should return a 201 status code, instead got {group_response.text}"
+        return group_response.json()
+
+    return _create_group
+
+
+@pytest.fixture
+def group(existing_admin_client: Client, group_factory: Callable) -> dict:
+
+    group = group_factory()
+    yield group
+    existing_admin_client.delete(f"/groups/{group['id']}")
+
 
 @pytest.fixture
 def project_factory(existing_admin_client: Client) -> Callable[[str], TestClient]:
@@ -153,11 +176,19 @@ def user_factory(existing_admin_client: Client):
 
 
 @pytest.fixture
-def user(existing_admin_client: Client, project_factory: Callable, user_factory: Callable):
+def user(existing_admin_client: Client, project_factory: Callable, group_factory, user_factory: Callable):
     """Fixture to create and yield a test user, then clean up after the test."""
 
     project = project_factory()
+    group = group_factory()
     user = user_factory(0, project_id=project['id'])
+
+    # Add the group after the user is created
+    group_addition_response = existing_admin_client.post(f"/groups/{group['id']}/users", json={"id": user['id']})
+    assert group_addition_response.status_code == 201
+
+    user = existing_admin_client.get(f"/users/{user['id']}").json()
+
     yield user
     existing_admin_client.delete(f"/users/{user['id']}")
 
