@@ -159,6 +159,6 @@ class TestFormatEscapedTemplate:
         )
 
         assert result == (
-            "Hello &lt;b&gt;&quot;Alice&quot; &amp; Bob&lt;/b&gt;, "
+            'Hello &lt;b&gt;"Alice" &amp; Bob&lt;/b&gt;, '
             "email: alice@example.com&lt;script&gt;alert(1)&lt;/script&gt;"
         )

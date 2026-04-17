@@ -171,7 +171,7 @@ def route_method_lookup(routes, route, method):
 
 def format_escaped_template(template: str, **kwargs) -> str:
     escaped_kwargs = {
-        key: escape(str(value), quote=True)
+        key: escape(str(value), quote=False)
         for key, value in kwargs.items()
     }
     return template.format(**escaped_kwargs)
