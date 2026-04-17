@@ -1,3 +1,4 @@
+from html import escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
@@ -167,6 +168,13 @@ def route_method_lookup(routes, route, method):
             return True
 
     return False
+
+def format_escaped_template(template: str, **kwargs) -> str:
+    escaped_kwargs = {
+        key: escape(str(value), quote=True)
+        for key, value in kwargs.items()
+    }
+    return template.format(**escaped_kwargs)
 
 def send_email(send_from: str, send_to: Union[str, list], subject: str, text: str, server=SMTP_SERVER):
     msg = MIMEMultipart()

@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from userapp.api.util import create_one_endpoint, send_email
+from userapp.api.util import create_one_endpoint, format_escaped_template, send_email
 from userapp.core.models.enum import RoleEnum
 from userapp.core.models.tables import UserForm as UserFormTable, UserGroup, UserProject
 from userapp.core.schemas.user_application_form import UserFormPatch
@@ -57,7 +57,10 @@ async def on_user_form_submit(session: AsyncSession, form_id: int, form: None) -
 
     # Try sending the user an email
     try:
-        text = ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE.format(name=user.name or "user")
+        text = format_escaped_template(
+            ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE,
+            name=user.name or "user",
+        )
         send_email("chtc@cs.wisc.edu", user.email1, "CHTC Account Application Received", text)
     except Exception:
         # we don't care if the email send fails
@@ -110,7 +113,10 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
     
     # Try sending the user an email
     try:
-        text = ON_USER_FORM_APPROVAL_EMAIL_TEMPLATE.format(name=user.name or "user")
+        text = format_escaped_template(
+            ON_USER_FORM_APPROVAL_EMAIL_TEMPLATE,
+            name=user.name or "user",
+        )
         send_email("chtc@cs.wisc.edu", user.email1, "CHTC Account Application Approved", text)
     except Exception:
         # we don't care if the email send fails

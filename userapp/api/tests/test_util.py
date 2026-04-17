@@ -1,6 +1,7 @@
 import random
 
 from userapp.api.tests.conftest import admin_client as client
+from userapp.api.util import format_escaped_template
 
 class TestListing:
 
@@ -146,3 +147,18 @@ class TestUpdateOne:
 
         assert updated_group_data['id'] == group_id, "The returned group ID does not match the requested ID"
         assert updated_group_data['name'] == update_data['name'], "The group name was not updated correctly"
+
+
+class TestFormatEscapedTemplate:
+
+    def test_escapes_kwargs_before_formatting(self):
+        result = format_escaped_template(
+            "Hello {name}, email: {email}",
+            name='<b>"Alice" & Bob</b>',
+            email="alice@example.com<script>alert(1)</script>",
+        )
+
+        assert result == (
+            "Hello &lt;b&gt;&quot;Alice&quot; &amp; Bob&lt;/b&gt;, "
+            "email: alice@example.com&lt;script&gt;alert(1)&lt;/script&gt;"
+        )
