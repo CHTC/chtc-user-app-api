@@ -2,12 +2,26 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from userapp.api.util import create_one_endpoint
+from userapp.api.util import create_one_endpoint, send_email
 from userapp.core.models.enum import RoleEnum
 from userapp.core.models.tables import UserForm as UserFormTable, UserGroup, UserProject
 from userapp.core.schemas.user_application_form import UserFormPatch
 from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.api.routes._util import _patch_user_submit_nodes
+
+async def on_user_form_submit(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
+    user_form = await session.scalar(
+        select(UserFormTable)
+        .where(UserFormTable.id == form_id)
+    )
+    user = user_form.base_form.created_by_user
+
+    # Try sending the user an email
+    try:
+        send_email("chtc@cs.wisc.edu", user.email1, "CHTC Account Application Received", "Thank you for requesting an account at CHTC! The CHTC Facilitation Staff will reach out to you within 2-3 business days. Contact us at chtc@cs.wisc.edu if you don't hear back from us after 3 business days.")
+    except:
+        # we don't care if the email send fails
+        pass
 
 async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
     user_form = await session.scalar(

@@ -18,7 +18,7 @@ from userapp.core.schemas.user_submit import UserSubmitTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.forms._util import on_user_form_accept
+from userapp.api.routes.forms._util import on_user_form_submit, on_user_form_accept
 
 UserApplicationViewFullSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
@@ -32,6 +32,7 @@ router = APIRouter(
 )
 
 form_triggers = {
+    (FormTypeEnum.USER, None, FormStatusEnum.PENDING): on_user_form_submit,
     (FormTypeEnum.USER, FormStatusEnum.PENDING, FormStatusEnum.APPROVED): on_user_form_accept,
     (FormTypeEnum.USER, FormStatusEnum.PENDING, FormStatusEnum.DENIED): None,
     (FormTypeEnum.USER, FormStatusEnum.DENIED, FormStatusEnum.APPROVED): on_user_form_accept,
@@ -133,6 +134,11 @@ async def create_user_form(
 
     # Flush session so we can get all the fields when we send the objects back as a view
     session.flush()
+
+    # Trigger the None->Pending transition
+    trigger = form_triggers.get((FormTypeEnum.USER, None, FormStatusEnum.PENDING))
+    if trigger:
+        await trigger(session, created_base_form.id, None)
 
     user_application_form = await get_one_endpoint(session, UserApplicationViewTable, created_base_form.id)
     return user_application_form

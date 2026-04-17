@@ -1,4 +1,8 @@
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formatdate
 from functools import lru_cache
+import smtplib
 import traceback
 import logging
 from typing import Any, Callable, TypeVar, Union
@@ -14,6 +18,7 @@ from sqlalchemy.dialects import postgresql
 
 from userapp.query_parser import QueryParser
 
+SMTP_SERVER = "smtp.wiscmail.wisc.edu"
 logger = logging.getLogger(__name__)
 
 def with_db_error_handling(func):
@@ -162,3 +167,16 @@ def route_method_lookup(routes, route, method):
             return True
 
     return False
+
+def send_email(send_from: str, send_to: Union[str, list], subject: str, text: str, server=SMTP_SERVER):
+    msg = MIMEMultipart()
+    msg['From'] = send_from
+    msg['To'] = send_to if isinstance(send_to, str) else ', '.join(send_to)  # Handle the two types
+    msg['Date'] = formatdate(localtime=True)
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(text))
+
+    smtp = smtplib.SMTP(server)
+    smtp.sendmail(send_from, send_to, msg.as_string())
+    smtp.close()
