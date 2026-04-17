@@ -9,7 +9,7 @@ from userapp.core.schemas.user_application_form import UserFormPatch
 from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.api.routes._util import _patch_user_submit_nodes
 
-async def on_user_form_submit(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
+async def on_user_form_submit(session: AsyncSession, form_id: int, form: UserFormTable | None) -> None:
     user_form = await session.scalar(
         select(UserFormTable)
         .where(UserFormTable.id == form_id)
