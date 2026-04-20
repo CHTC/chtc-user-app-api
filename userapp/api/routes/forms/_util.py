@@ -9,6 +9,8 @@ from userapp.core.schemas.user_application_form import UserFormPatch
 from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.api.routes._util import _patch_user_submit_nodes
 
+CHTC_TICKETING_EMAIL = "chtc@cs.wisc.edu"
+
 ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE = """
 Dear {name},
 
@@ -48,12 +50,13 @@ Best,
 The CHTC Research Computing Facilitation team
 """.strip()
 
-async def on_user_form_submit(session: AsyncSession, form_id: int, form: None) -> None:
-    user_form = await session.scalar(
-        select(UserFormTable)
-        .where(UserFormTable.id == form_id)
-    )
+async def on_user_form_submit(session: AsyncSession, form_id: int, user_form: UserFormTable) -> None:
+
+    # Get an email for the application submission
     user = user_form.base_form.created_by_user
+    email = user.email1 or user_form.email
+    if email is None:
+        raise HTTPException(status_code=400, detail="User form must have an email address if user account does not.")
 
     # Try sending the user an email
     try:
@@ -61,7 +64,7 @@ async def on_user_form_submit(session: AsyncSession, form_id: int, form: None) -
             ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE,
             name=user.name or "user",
         )
-        send_email("chtc@cs.wisc.edu", user.email1, "CHTC Account Application Received", text)
+        send_email(CHTC_TICKETING_EMAIL, email, CHTC_TICKETING_EMAIL, "CHTC Account Application Received", text)
     except Exception:
         # we don't care if the email send fails
         pass
@@ -82,6 +85,12 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
         raise HTTPException(status_code=404, detail=f"User {user_form.base_form.created_by} not found")
 
     user.active = True
+
+    # Set the users email if not already set
+    if user.email1 is None:
+        if form.email is None:
+            raise HTTPException(status_code=400, detail="User has no email address and no email provided in form patch")
+        user.email1 = form.email
 
     # If we are not preserving the users data dump all of their groups
     if not form.preserve_existing_data:
@@ -117,7 +126,7 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
             ON_USER_FORM_APPROVAL_EMAIL_TEMPLATE,
             name=user.name or "user",
         )
-        send_email("chtc@cs.wisc.edu", user.email1, "CHTC Account Application Approved", text)
+        send_email(CHTC_TICKETING_EMAIL, user.email1, CHTC_TICKETING_EMAIL, "CHTC Account Application Approved", text)
     except Exception:
         # we don't care if the email send fails
         pass

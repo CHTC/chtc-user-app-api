@@ -89,6 +89,7 @@ class UserApplicationView(Base):
     updated_at = Column(TIMESTAMP)
 
     # UserForm columns
+    email = Column(String(255))
     pi_id = Column(Integer)
     pi_name = Column(String(255))
     pi_email = Column(String(255))

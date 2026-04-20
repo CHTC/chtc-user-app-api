@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, EmailStr
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum, RoleEnum
 from userapp.core.schemas.general import BaseModel
@@ -12,6 +12,7 @@ class UserFormPatch(BaseModel):
     status: FormStatusEnum
 
     preserve_existing_data: Optional[bool] = Field(default=False)
+    email: Optional[EmailStr] = Field(default=None)
     project_id: Optional[int] = Field(default=None)
     user_position: Optional[PositionEnum] = Field(default=None)
     submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=None)
@@ -20,6 +21,7 @@ class UserFormPatch(BaseModel):
 class UserFormTableSchema(BaseModel):
     """Schema for the database representation of a UserForm."""
     id: int
+    email: Optional[EmailStr] = Field(default=None)
     pi_id: Optional[int] = Field(default=None)
     pi_name: Optional[str] = Field(default=None)
     pi_email: Optional[str] = Field(default=None)
@@ -28,6 +30,7 @@ class UserFormTableSchema(BaseModel):
 
 
 class UserFormGet(BaseModel):
+    email: Optional[EmailStr] = Field(default=None)
     pi_id: Optional[int] = Field(default=None)
     pi_name: Optional[str] = Field(default=None)
     pi_email: Optional[str] = Field(default=None)
@@ -36,6 +39,7 @@ class UserFormGet(BaseModel):
 
 
 class UserFormPost(BaseModel):
+    email: Optional[EmailStr] = Field(default=None)
     pi_id: Optional[int] = Field(default=None)
     pi_name: Optional[str] = Field(default=None)
     pi_email: Optional[str] = Field(default=None)

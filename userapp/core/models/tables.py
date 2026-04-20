@@ -94,7 +94,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    email1 = Column(String(255), nullable=False)
+    email1 = Column(String(255))
     email2 = Column(String(255))
     netid = Column(String(255)) # Made unique via a Table constraint
     netid_exp_datetime = Column(TIMESTAMP)
@@ -258,6 +258,7 @@ class UserForm(Base):
     id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
 
     # These can be tied into the existing data system
+    email = Column(String(255), nullable=True)
     pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
     pi_name = Column(String(255), nullable=True)
     pi_email = Column(String(255), nullable=True)
