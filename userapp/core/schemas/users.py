@@ -18,7 +18,7 @@ class UserTableSchema(BaseModel):
 
     id: Optional[int] = Field(default=None)
     name: str
-    email1: EmailStr
+    email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
     netid_exp_datetime: Optional[datetime] = Field(default=None)
@@ -41,7 +41,7 @@ class UserGet(BaseModel):
     id: Optional[int] = Field(default=None)
     name: str
     username: None = Field(default=None)
-    email1: EmailStr
+    email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
     netid_exp_datetime: Optional[datetime] = Field(default=None)
@@ -139,7 +139,6 @@ class RestrictedUserPatch(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     name: Optional[str] = Field(default=None)
-    email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     phone1: Optional[str] = Field(default=None)
     phone2: Optional[str] = Field(default=None)

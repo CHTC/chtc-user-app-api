@@ -124,13 +124,14 @@ async def create_user_form(
     }
     user_form_schema = UserFormTableSchema(
         id=created_base_form.id,
+        email=form.email,
         pi_id=form.pi_id,
         pi_name=form.pi_name,
         pi_email=form.pi_email,
         position=form.position,
         content=form_content
     )
-    await create_one_endpoint(session, UserFormTable, user_form_schema)
+    user_form = await create_one_endpoint(session, UserFormTable, user_form_schema)
 
     # Flush session so we can get all the fields when we send the objects back as a view
     session.flush()
@@ -138,7 +139,7 @@ async def create_user_form(
     # Trigger the None->Pending transition
     trigger = form_triggers.get((FormTypeEnum.USER, None, FormStatusEnum.PENDING))
     if trigger:
-        await trigger(session, created_base_form.id, None)
+        await trigger(session, created_base_form.id, user_form)
 
     user_application_form = await get_one_endpoint(session, UserApplicationViewTable, created_base_form.id)
     return user_application_form
