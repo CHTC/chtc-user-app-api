@@ -6,6 +6,7 @@ from functools import lru_cache
 import smtplib
 import traceback
 import logging
+import os
 from typing import Any, Callable, TypeVar, Union
 
 from fastapi import HTTPException
@@ -180,9 +181,8 @@ def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], 
 
     # Don't send emails outside of production
     if os.getenv("PYTHON_ENV") != "production":
-        print(send_from, send_to, cc, subject, text)
+        print("Fake sending an email!", send_from, send_to, cc, subject, text)
         return
-
 
     msg = MIMEMultipart()
     msg['From'] = send_from

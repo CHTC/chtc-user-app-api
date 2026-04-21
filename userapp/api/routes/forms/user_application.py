@@ -134,7 +134,7 @@ async def create_user_form(
     user_form = await create_one_endpoint(session, UserFormTable, user_form_schema)
 
     # Flush session so we can get all the fields when we send the objects back as a view
-    session.flush()
+    await session.flush()
 
     # Trigger the None->Pending transition
     trigger = form_triggers.get((FormTypeEnum.USER, None, FormStatusEnum.PENDING))
