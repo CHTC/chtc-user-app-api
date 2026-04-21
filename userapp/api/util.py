@@ -179,7 +179,7 @@ def format_escaped_template(template: str, **kwargs) -> str:
     }
     return template.format(**escaped_kwargs)
 
-def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], subject: str, text: str, server=SMTP_SERVER, port=SMTP_PORT):
+def send_email(send_from: str, send_to: Union[str, list], subject: str, text: str, cc: Union[str, list] = None, server=SMTP_SERVER, port=SMTP_PORT):
 
     # Don't send emails outside of production
     if os.getenv("PYTHON_ENV") != "production":
@@ -189,7 +189,8 @@ def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], 
     msg = MIMEMultipart()
     msg['From'] = send_from
     msg['To'] = send_to if isinstance(send_to, str) else ', '.join(send_to)  # Handle the two types
-    msg["Cc"] = cc if isinstance(cc, str) else ', '.join(cc)  # Handle the two types
+    if cc:
+        msg["Cc"] = cc if isinstance(cc, str) else ', '.join(cc)  # Handle the two types
     msg['Date'] = formatdate(localtime=True)
     msg['Subject'] = subject
 
