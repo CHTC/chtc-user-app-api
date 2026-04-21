@@ -127,7 +127,8 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
             name=user.name or "user",
         )
         send_email(CHTC_TICKETING_EMAIL, user.email1, CHTC_TICKETING_EMAIL, "CHTC Account Approved", text)
-    except Exception:
+    except Exception as e:
+        print(e)
         # we don't care if the email send fails
         pass
 

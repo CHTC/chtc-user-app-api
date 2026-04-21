@@ -195,6 +195,12 @@ def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], 
 
     msg.attach(MIMEText(text))
 
+    # Build envelope recipients (must include both TO and CC for SMTP)
+    envelope_recipients = [send_to] if isinstance(send_to, str) else list(send_to)
+    if cc:
+        cc_list = [cc] if isinstance(cc, str) else list(cc)
+        envelope_recipients.extend(cc_list)
+
     smtp = smtplib.SMTP(server, port)
-    smtp.sendmail(send_from, send_to, msg.as_string())
+    smtp.sendmail(send_from, envelope_recipients, msg.as_string())
     smtp.close()
