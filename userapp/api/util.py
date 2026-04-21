@@ -20,8 +20,10 @@ from sqlalchemy.dialects import postgresql
 
 from userapp.query_parser import QueryParser
 
-SMTP_SERVER = "smtp.wiscmail.wisc.edu"
 logger = logging.getLogger(__name__)
+
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.wiscmail.wisc.edu")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 
 def with_db_error_handling(func):
     async def wrapper(*args, **kwargs):
@@ -177,7 +179,7 @@ def format_escaped_template(template: str, **kwargs) -> str:
     }
     return template.format(**escaped_kwargs)
 
-def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], subject: str, text: str, server=SMTP_SERVER):
+def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], subject: str, text: str, server=SMTP_SERVER, port=SMTP_PORT):
 
     # Don't send emails outside of production
     if os.getenv("PYTHON_ENV") != "production":
@@ -193,6 +195,6 @@ def send_email(send_from: str, send_to: Union[str, list], cc: Union[str, list], 
 
     msg.attach(MIMEText(text))
 
-    smtp = smtplib.SMTP(server)
+    smtp = smtplib.SMTP(server, port)
     smtp.sendmail(send_from, send_to, msg.as_string())
     smtp.close()
