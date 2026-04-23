@@ -47,7 +47,7 @@ async def on_user_form_submit(session: AsyncSession, form_id: int, user_form: Us
             ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE,
             name=user.name or "user",
         )
-        send_email(CHTC_NO_REPLY_EMAIL, email, "CHTC Account Request", text, CHTC_TICKETING_EMAIL)
+        send_email(CHTC_NO_REPLY_EMAIL, email, "CHTC Account Request", text, CHTC_TICKETING_EMAIL, reply_to=CHTC_TICKETING_EMAIL)
     except Exception:
         # we don't care if the email send fails
         pass
@@ -109,7 +109,7 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
             ON_USER_FORM_APPROVAL_EMAIL_TEMPLATE,
             name=user.name or "user",
         )
-        send_email(CHTC_NO_REPLY_EMAIL, user.email1, "CHTC Account Approved", text)
+        send_email(CHTC_NO_REPLY_EMAIL, user.email1, "CHTC Account Approved", text, reply_to=CHTC_TICKETING_EMAIL)
     except Exception as e:
         print(e)
         # we don't care if the email send fails
