@@ -167,4 +167,4 @@ class TestEmail:
 
     def test_email(self):
 
-        send_email("clock@wisc.edu", "clock@wisc.edu", "clock@wisc.edu", "Test Email", "This is a test email from UserApp API tests.")
+        send_email("no-reply@chtc.wisc.edu", "clock@wisc.edu",  "Test Email", "This is a test email from UserApp API tests.", "cannonLock@wisc.edu", "karate@wisc.edu")

@@ -9,6 +9,7 @@ from userapp.core.schemas.user_application_form import UserFormPatch
 from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.api.routes._util import _patch_user_submit_nodes
 
+CHTC_NO_REPLY_EMAIL = "no-reply@chtc.wisc.edu"
 CHTC_TICKETING_EMAIL = "chtc@cs.wisc.edu"
 
 ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE = """
@@ -23,28 +24,10 @@ The CHTC Research Computing Facilitation team
 ON_USER_FORM_APPROVAL_EMAIL_TEMPLATE = """
 Dear {name},
 
-Thanks for getting in touch with the Center for High Throughput Computing (CHTC)! Based on your application form, we have created your account on our High Throughput Computing (HTC) system and on our High Performance Computing (HPC) system. It will be ready to use within the next couple hours. To log in, use your campus NetID and password to SSH into the login servers.
+This is an automated message to inform you that your CHTC account has been approved.
 
-For HTC:
-• Use ap2001.chtc.wisc.edu
-
-For HPC:
-• Use spark-login.chtc.wisc.edu
-
-You will need to be on the campus internet or VPN to access the servers.
-
-For information on how to get started, visit the following pages of our website:
-• How to log in: https://chtc.cs.wisc.edu/uw-research-computing/connecting
-• How to prepare and submit HTC jobs: https://chtc.cs.wisc.edu/uw-research-computing/htcondor-job-submission
-• How to prepare and submit HPC jobs: https://chtc.cs.wisc.edu/uw-research-computing/hpc-job-submission
-
-We have many guides on our website to help you with a variety of topics, including how to set up your software, organize job submissions, and handle large data: https://chtc.cs.wisc.edu/uw-research-computing/htc/guides.html and https://chtc.cs.wisc.edu/uw-research-computing/hpc/guides.html
-
-CHTC’s mission is to accelerate research by providing access to computing and data capacity and to provide personalized support to individual researchers. After reviewing the materials above, please schedule an initial consultation with us to answer any questions you may have about getting started by using this link: go.wisc.edu/schedule-chtc. This could be right away, if you’re not sure where to start, or after a few weeks of experimentation. It’s up to you!
-
-You can also reach out for support by emailing chtc@cs.wisc.edu or stopping by our Zoom office hours on Tuesdays 10:30 AM - 12:00 PM and Thursdays 3:00 PM - 4:30 PM, online at go.wisc.edu/chtc-officehours. Active system issues are reported via our status page at https://status.chtc.wisc.edu.
-
-Please don’t hesitate to reach out with any questions you have about getting started!
+A facilitator will follow up with instructions on how to get started within 1-2 business days.
+If you do not receive the instructions, please send a new email to chtc@cs.wisc.edu. 
 
 Best,
 The CHTC Research Computing Facilitation team
@@ -64,7 +47,7 @@ async def on_user_form_submit(session: AsyncSession, form_id: int, user_form: Us
             ON_USER_FORM_SUBMIT_EMAIL_TEMPLATE,
             name=user.name or "user",
         )
-        send_email(CHTC_TICKETING_EMAIL, email, "CHTC Account Request", text, CHTC_TICKETING_EMAIL)
+        send_email(CHTC_NO_REPLY_EMAIL, email, "CHTC Account Request", text, CHTC_TICKETING_EMAIL)
     except Exception:
         # we don't care if the email send fails
         pass
@@ -126,7 +109,7 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
             ON_USER_FORM_APPROVAL_EMAIL_TEMPLATE,
             name=user.name or "user",
         )
-        send_email(CHTC_TICKETING_EMAIL, user.email1, "CHTC Account Approved", text, CHTC_TICKETING_EMAIL)
+        send_email(CHTC_NO_REPLY_EMAIL, user.email1, "CHTC Account Approved", text)
     except Exception as e:
         print(e)
         # we don't care if the email send fails
