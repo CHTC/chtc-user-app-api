@@ -6,6 +6,7 @@ from functools import lru_cache
 import smtplib
 import traceback
 import logging
+import os
 from typing import Any, Callable, TypeVar, Union
 
 from fastapi import HTTPException
@@ -19,8 +20,10 @@ from sqlalchemy.dialects import postgresql
 
 from userapp.query_parser import QueryParser
 
-SMTP_SERVER = "smtp.wiscmail.wisc.edu"
 logger = logging.getLogger(__name__)
+
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.wiscmail.wisc.edu")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 
 def with_db_error_handling(func):
     async def wrapper(*args, **kwargs):
@@ -176,15 +179,31 @@ def format_escaped_template(template: str, **kwargs) -> str:
     }
     return template.format(**escaped_kwargs)
 
-def send_email(send_from: str, send_to: Union[str, list], subject: str, text: str, server=SMTP_SERVER):
+def send_email(send_from: str, send_to: Union[str, list], subject: str, text: str, cc: Union[str, list] = None, reply_to: Union[str, list] = None, server=SMTP_SERVER, port=SMTP_PORT):
+
+    # Don't send emails outside of production
+    if os.getenv("PYTHON_ENV") != "production":
+        print("Fake sending an email!", send_from, send_to, cc, reply_to, subject, text)
+        return
+
     msg = MIMEMultipart()
     msg['From'] = send_from
     msg['To'] = send_to if isinstance(send_to, str) else ', '.join(send_to)  # Handle the two types
+    if cc:
+        msg["Cc"] = cc if isinstance(cc, str) else ', '.join(cc)  # Handle the two types
+    if reply_to:
+        msg["Reply-To"] = reply_to if isinstance(reply_to, str) else ', '.join(reply_to)
     msg['Date'] = formatdate(localtime=True)
     msg['Subject'] = subject
 
     msg.attach(MIMEText(text))
 
-    smtp = smtplib.SMTP(server)
-    smtp.sendmail(send_from, send_to, msg.as_string())
+    # Build envelope recipients (must include both TO and CC for SMTP)
+    envelope_recipients = [send_to] if isinstance(send_to, str) else list(send_to)
+    if cc:
+        cc_list = [cc] if isinstance(cc, str) else list(cc)
+        envelope_recipients.extend(cc_list)
+
+    smtp = smtplib.SMTP(server, port)
+    smtp.sendmail(send_from, envelope_recipients, msg.as_string())
     smtp.close()

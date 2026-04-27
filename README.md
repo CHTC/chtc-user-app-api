@@ -41,3 +41,16 @@ Example:
 
 `/users?netid=not.like.clock&username=not.eq.cannonlock` is the SQL equivalent to `NOT netid LIKE '%clock%' AND NOT username = 'cannonlock'`.
 
+### Ordering
+
+Ordering format is:
+
+```
+<column_name>=order_by.<asc | desc>
+```
+
+For example:
+
+```
+https://userapp.chtc.wisc.edu/api/users?page=0&page_size=50&date=order_by.desc
+```

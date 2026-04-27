@@ -1,7 +1,7 @@
 import random
 
 from userapp.api.tests.conftest import admin_client as client
-from userapp.api.util import format_escaped_template
+from userapp.api.util import format_escaped_template, send_email
 
 class TestListing:
 
@@ -162,3 +162,9 @@ class TestFormatEscapedTemplate:
             'Hello &lt;b&gt;"Alice" &amp; Bob&lt;/b&gt;, '
             "email: alice@example.com&lt;script&gt;alert(1)&lt;/script&gt;"
         )
+
+class TestEmail:
+
+    def test_email(self):
+
+        send_email("no-reply@chtc.wisc.edu", "clock@wisc.edu",  "Test Email", "This is a test email from UserApp API tests.", "cannonLock@wisc.edu", "karate@wisc.edu")

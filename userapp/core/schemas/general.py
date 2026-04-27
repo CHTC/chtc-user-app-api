@@ -24,7 +24,7 @@ class PiProjectView(BaseModel):
     name: Optional[str] = Field(default=None)
     project_id: int
     project_name: str
-    email1: Optional[str] = Field(default=None)
+    email1: Optional[EmailStr] = Field(default=None)
     phone1: Optional[str] = Field(default=None)
     netid: Optional[str] = Field(default=None)
 
@@ -40,7 +40,7 @@ class JoinedProjectView(BaseModel):
     is_primary: Optional[bool] = Field(default=None)
     name: str
     username: str
-    email1: EmailStr
+    email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
     netid_exp_datetime: Optional[datetime] = Field(default=None)
@@ -73,6 +73,7 @@ class UserApplicationView(BaseModel):
     updated_at: datetime
 
     # UserForm fields
+    email: Optional[EmailStr] = Field(default=None)
     pi_id: Optional[int] = Field(default=None)
     pi_name: Optional[str] = Field(default=None)
     pi_email: Optional[EmailStr] = Field(default=None)

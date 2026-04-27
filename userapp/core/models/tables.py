@@ -18,7 +18,7 @@ class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(VARCHAR(32), unique=True, nullable=False)
-    point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
+    point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     unix_gid = Column(Integer, unique=True)
     has_groupdir = Column(Boolean, nullable=False, default=True)
 
@@ -34,7 +34,7 @@ class Note(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket = Column(String(9))
     note = Column(Text, nullable=False)
-    author_id = Column('author', Integer, ForeignKey('users.id', ondelete='SET NULL'))
+    author_id = Column('author', Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
     # Relationships
@@ -57,12 +57,12 @@ class Project(Base):
     __tablename__ = 'projects'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
-    pi = Column(Integer)
-    staff1 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
-    staff2 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
-    status = Column(String(255))
+    pi = Column(Integer, index=True)
+    staff1 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
+    staff2 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
+    status = Column(String(255), index=True)
     access = Column(String(255))
-    accounting_group = Column(String(255), nullable=False)
+    accounting_group = Column(String(255), nullable=False, index=True)
     url = Column(String(255))
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     ticket = Column(Integer)
@@ -90,11 +90,14 @@ class User(Base):
     __tablename__ = 'users'
     __table_args__ = (
         UniqueConstraint('netid', name='uniq_netid_unique_if_not_null', postgresql_nulls_not_distinct=False),
+        Index('ix_users_email1', 'email1'),
+        Index('ix_users_unix_uid', 'unix_uid'),
+        Index('ix_users_active', 'active'),
     )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    email1 = Column(String(255), nullable=False)
+    email1 = Column(String(255))
     email2 = Column(String(255))
     netid = Column(String(255)) # Made unique via a Table constraint
     username = Column(String(255), unique=True, nullable=False)
@@ -150,7 +153,7 @@ class User(Base):
 class UserGroup(Base):
     __tablename__ = 'user_groups'
     id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey('groups.id', ondelete="CASCADE"), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     __table_args__ = (UniqueConstraint('user_id', 'group_id', name='user_groups_distinct'),)
 
@@ -160,6 +163,8 @@ class UserNote(Base):
     __table_args__ = (
         Index('idx_user_notes_userid_projectid_noteid', 'user_id', 'project_id', 'note_id'),
         Index('idx_user_notes_userid_noteid_desc', 'user_id', 'note_id', postgresql_using='btree'),
+        Index('ix_user_notes_note_id', 'note_id'),
+        Index('ix_user_notes_project_id', 'project_id'),
     )
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False)
@@ -170,7 +175,7 @@ class UserNote(Base):
 class UserProject(Base):
     __tablename__ = 'user_projects'
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False)
+    project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     role = Column(SQLEnum(RoleEnum, name="role_enum"), nullable=True)
     is_primary = Column(Boolean, nullable=False, default=False)
@@ -186,7 +191,7 @@ class UserSubmit(Base):
     )
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False)
+    submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False, index=True)
     for_auth_netid = Column(Boolean)
     disk_quota = Column(Integer)
     hpc_diskquota = Column(Integer, nullable=False, default=100)
@@ -198,11 +203,11 @@ class UserSubmit(Base):
 class Token(Base):
     __tablename__ = 'tokens'
     id = Column(Integer, primary_key=True, index=True)
-    created_by = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
+    created_by = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), index=True)
     token = Column(String(255), unique=True, nullable=False)
     description = Column(String(255))
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
-    expires_at = Column(TIMESTAMP)
+    expires_at = Column(TIMESTAMP, index=True)
 
     permissions: Mapped[List["TokenPermission"]] = relationship(
         "TokenPermission",
@@ -224,8 +229,8 @@ class TokenPermission(Base):
 class Access(Base):
     __tablename__ = 'access'
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
-    token_id = Column(Integer, ForeignKey('tokens.id'), nullable=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
+    token_id = Column(Integer, ForeignKey('tokens.id'), nullable=True, index=True)
     route = Column(String(255), nullable=False)
     payload = Column(String(255), nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -235,11 +240,11 @@ class Access(Base):
 class BaseForm(Base):
     __tablename__ = 'forms'
     id = Column(Integer, primary_key=True, index=True)
-    form_type = Column(SQLEnum(FormTypeEnum, name="form_type_enum"), nullable=False)
-    status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"), nullable=False, server_default=FormStatusEnum.PENDING.value)
-    created_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    form_type = Column(SQLEnum(FormTypeEnum, name="form_type_enum"), nullable=False, index=True)
+    status = Column(SQLEnum(FormStatusEnum, name="form_status_enum"), nullable=False, server_default=FormStatusEnum.PENDING.value, index=True)
+    created_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
-    updated_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True, index=True)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     created_by_user: Mapped[Optional["User"]] = relationship(
@@ -259,7 +264,8 @@ class UserForm(Base):
     id = Column(Integer, ForeignKey('forms.id', ondelete="CASCADE"), primary_key=True)
 
     # These can be tied into the existing data system
-    pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
+    email = Column(String(255), nullable=True)
+    pi_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True, index=True)
     pi_name = Column(String(255), nullable=True)
     pi_email = Column(String(255), nullable=True)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)

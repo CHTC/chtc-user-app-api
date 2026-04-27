@@ -1,10 +1,14 @@
 import random
+from typing import Callable, Generator, Any
 from unittest.mock import AsyncMock
 
+import pytest
 from httpx import Client
+from starlette.testclient import TestClient
 from userapp.api.routes import forms as forms_routes
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum
 from userapp.api.tests.fake_data import user_form_data_f, user_form_approval_data_f
+from userapp.api.tests.conftest import _make_auth_client
 
 
 def create_submit_node(admin_client: Client) -> dict:
@@ -507,3 +511,202 @@ class TestUserFormTriggers:
         assert updated_user["active"] is True
         assert any(project_membership["project_id"] == project["id"] for project_membership in updated_user["projects"])
         assert any(user_submit["submit_node_name"] == submit_node["name"] for user_submit in updated_user["submit_nodes"])
+
+
+@pytest.fixture
+def user_without_email(existing_admin_client: Client, project_factory, group_factory, user_factory) -> dict:
+    """Fixture that creates a test user and clears their email1 to simulate an OIDC user with no email."""
+
+    project = project_factory()
+    user = user_factory(0, project_id=project["id"])
+
+    # Clear email1 to simulate a user with no email from the OIDC provider
+    patch_response = existing_admin_client.patch(f"/users/{user['id']}", json={"email1": None})
+    assert patch_response.status_code == 200, (
+        f"Clearing email1 should return 200, got {patch_response.status_code}: {patch_response.text}"
+    )
+
+    user = existing_admin_client.get(f"/users/{user['id']}").json()
+    assert user["email1"] is None, "User email1 should be None for this fixture"
+
+    yield user
+
+    existing_admin_client.delete(f"/users/{user['id']}")
+
+
+class TestEmailOnForm:
+    """Tests for the case where a user has no email address from their OIDC provider
+    and must supply one via the application form."""
+
+    def test_submit_with_email_succeeds_when_user_has_no_email(
+        self,
+        user_without_email: dict,
+        admin_client: Client,
+    ):
+        """A user without an email address can submit a form by providing email in the form."""
+
+        # Mark inactive so they can submit
+        r = admin_client.patch(f"/users/{user_without_email['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+        form_data["email"] = "noemail_user@example.com"
+
+        client = next(_make_auth_client(user_without_email))
+        response = client.post("/forms/user-applications", json=form_data)
+
+        assert response.status_code == 201, (
+            f"POST /forms/user-applications with email field should return 201 for user without email1, "
+            f"got {response.status_code}: {response.text}"
+        )
+
+    def test_submit_without_email_fails_when_user_has_no_email(
+        self,
+        user_without_email: dict,
+        admin_client: Client,
+    ):
+        """A user without an email address gets an error when they don't provide email in the form."""
+
+        # Mark inactive so they can submit
+        r = admin_client.patch(f"/users/{user_without_email['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+        # Explicitly omit email
+        form_data.pop("email", None)
+
+        client = next(_make_auth_client(user_without_email))
+        response = client.post("/forms/user-applications", json=form_data)
+
+        assert response.status_code != 201, (
+            f"POST /forms/user-applications without email should not return 201 when user has no email1, "
+            f"got {response.status_code}: {response.text}"
+        )
+
+    def test_approve_with_email_sets_user_email(
+        self,
+        user_without_email: dict,
+        admin_client: Client,
+        project_factory,
+    ):
+        """When admin approves a form and the user has no email1, providing email in the patch sets user.email1."""
+
+        # Mark inactive
+        r = admin_client.patch(f"/users/{user_without_email['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+        form_data["email"] = "new_email@example.com"
+
+        client = next(_make_auth_client(user_without_email))
+        create_response = client.post("/forms/user-applications", json=form_data)
+
+        assert create_response.status_code == 201, (
+            f"POST /forms/user-applications should return 201, got {create_response.status_code}: {create_response.text}"
+        )
+        form_id = create_response.json()["id"]
+
+        project = project_factory()
+        submit_node = create_submit_node(admin_client)
+        approval_data = user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}])
+        approval_data["email"] = "new_email@example.com"
+
+        update_response = admin_client.patch(f"/forms/user-applications/{form_id}", json=approval_data)
+
+        assert update_response.status_code == 200, (
+            f"Admin PATCH /forms/user-applications/{form_id} with email should return 200, "
+            f"got {update_response.status_code}: {update_response.text}"
+        )
+
+        user_response = admin_client.get(f"/users/{user_without_email['id']}")
+        assert user_response.status_code == 200
+        updated_user = user_response.json()
+
+        assert updated_user["email1"] == "new_email@example.com", (
+            f"User email1 should be set to 'new_email@example.com' after approval, got {updated_user['email1']}"
+        )
+        assert updated_user["active"] is True
+
+    def test_approve_without_email_fails_when_user_has_no_email(
+        self,
+        user_without_email: dict,
+        admin_client: Client,
+        project_factory,
+    ):
+        """When admin approves a form without providing email and user has no email1, it should return 400."""
+
+        # Mark inactive
+        r = admin_client.patch(f"/users/{user_without_email['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+        form_data["email"] = "temp@example.com"
+
+        client = next(_make_auth_client(user_without_email))
+        create_response = client.post("/forms/user-applications", json=form_data)
+
+        assert create_response.status_code == 201, (
+            f"POST /forms/user-applications should return 201, got {create_response.status_code}: {create_response.text}"
+        )
+        form_id = create_response.json()["id"]
+
+        project = project_factory()
+        submit_node = create_submit_node(admin_client)
+        # Do NOT include email in the approval patch
+        approval_data = user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}])
+
+        update_response = admin_client.patch(f"/forms/user-applications/{form_id}", json=approval_data)
+
+        assert update_response.status_code == 400, (
+            f"Admin PATCH /forms/user-applications/{form_id} without email for user with no email1 should return 400, "
+            f"got {update_response.status_code}: {update_response.text}"
+        )
+
+    def test_form_email_field_is_stored(
+        self,
+        user_without_email: dict,
+        admin_client: Client,
+    ):
+        """The email provided in a form submission should be stored and retrievable."""
+
+        # Mark inactive
+        r = admin_client.patch(f"/users/{user_without_email['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        submitted_email = "stored_email@example.com"
+        form_data = user_form_data_f()
+        form_data["email"] = submitted_email
+
+        client = next(_make_auth_client(user_without_email))
+        create_response = client.post("/forms/user-applications", json=form_data)
+
+        assert create_response.status_code == 201
+        response_json = create_response.json()
+        assert response_json.get("email") == submitted_email, (
+            f"Submitted email should be stored in the form response, got {response_json.get('email')}"
+        )
+
+    def test_user_with_email_can_submit_without_form_email(
+        self,
+        user: dict,
+        nonadmin_client: Client,
+        admin_client: Client,
+    ):
+        """A user who already has email1 from their OIDC provider doesn't need to provide email on the form."""
+
+        # Mark inactive
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+        # Ensure email is not in the form
+        form_data.pop("email", None)
+
+        response = nonadmin_client.post("/forms/user-applications", json=form_data)
+
+        assert response.status_code == 201, (
+            f"A user with email1 should be able to submit a form without providing email, "
+            f"got {response.status_code}: {response.text}"
+        )
+
+

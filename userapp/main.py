@@ -24,6 +24,8 @@ class AppSettings(BaseSettings):
     SECRET_KEY: str
     OIDC_CLIENT_ID: Optional[str] = None
     OIDC_CLIENT_SECRET: Optional[str] = None
+    SMTP_SERVER: Optional[str] = "smtp.wiscmail.wisc.edu"
+    SMTP_PORT: Optional[int] = 587
 
 
 settings = AppSettings()

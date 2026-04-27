@@ -1,7 +1,7 @@
 """Add unix username field
 
 Revision ID: 47f8adc9859b
-Revises: 6450d7ab8865
+Revises: 4aa2a7d34719
 Create Date: 2026-04-20 10:27:12.467103
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '47f8adc9859b'
-down_revision: Union[str, Sequence[str], None] = '6450d7ab8865'
+down_revision: Union[str, Sequence[str], None] = '4aa2a7d34719'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
