@@ -19,7 +19,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 netid_username_map = {
-    "aschneider37": "austins",
+    "thain": "gthain",
+    "tatannen": "tannenba",
+    "jamesfrey": "jfray",
+    "tlmiller2": "tlmiller",
+    "blin28": "blin",
+    "turatsinze": "tura",
+    "bockelman": "bbockelm",
+    "totheisen": "tim",
+    "mselmeci": "matyas",
+    "knoeller": "johnkn",
+    "tcartwright": "cat",
 }
 
 
