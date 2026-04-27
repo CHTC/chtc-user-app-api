@@ -11,6 +11,14 @@ from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
 
+def _normalize_active_identity(active: Optional[bool], netid: Optional[str], username: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    if active and not netid:
+        raise ValueError("If active is True, netid must be provided.")
+    if active and not username:
+        username = netid
+    return netid, username
+
+
 class UserTableSchema(BaseModel):
     """Used to represent a user as stored in the database"""
 
@@ -18,7 +26,7 @@ class UserTableSchema(BaseModel):
 
     id: Optional[int] = Field(default=None)
     name: str
-    username: str
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -35,13 +43,18 @@ class UserTableSchema(BaseModel):
     def serialize_position(self, position: PositionEnum) -> str | None:
         return position.name if position is not None else None
 
+    @model_validator(mode="after")
+    def normalize_active_identity(self):
+        self.netid, self.username = _normalize_active_identity(self.active, self.netid, self.username)
+        return self
+
 
 class UserGet(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     id: Optional[int] = Field(default=None)
     name: str
-    username: str
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -61,12 +74,12 @@ class UserGet(BaseModel):
     @computed_field
     @property
     def auth_netid(self) -> Optional[bool]:
-        return self.active and self.netid == self.username
+        return self.active and self.netid is not None and self.username == self.netid
 
     @computed_field
     @property
     def auth_username(self) -> Optional[bool]:
-        return self.active and self.netid != self.username
+        return self.active and self.netid is not None and self.username is not None and self.netid != self.username
 
 class UserGetFull(UserGet):
 
@@ -81,7 +94,7 @@ class UserPost(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     name: str
-    username: str
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -99,10 +112,7 @@ class UserPost(BaseModel):
 
     @model_validator(mode="after")
     def check_active_requires_netid(self):
-        if self.active and not self.netid:
-            raise ValueError("If active is True, netid must be provided.")
-        if self.active and not self.username:
-            raise ValueError("If active is True, username must be provided.")
+        self.netid, self.username = _normalize_active_identity(self.active, self.netid, self.username)
         return self
 
 
@@ -137,10 +147,7 @@ class UserPatch(BaseModel):
     @model_validator(mode="after")
     def check_active_requires_identity(self):
         if self.active:
-            if 'netid' in self.model_fields_set and not self.netid:
-                raise ValueError("If active is True, netid must be provided.")
-            if 'username' in self.model_fields_set and not self.username:
-                raise ValueError("If active is True, username must be provided.")
+            self.netid, self.username = _normalize_active_identity(self.active, self.netid, self.username)
         return self
 
 class UserPatchFull(UserPatch):

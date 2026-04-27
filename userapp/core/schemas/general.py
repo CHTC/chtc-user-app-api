@@ -39,7 +39,7 @@ class JoinedProjectView(BaseModel):
     project_accounting_group: Optional[str] = Field(default=None)
     is_primary: Optional[bool] = Field(default=None)
     name: str
-    username: str
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -57,12 +57,12 @@ class JoinedProjectView(BaseModel):
     @computed_field
     @property
     def auth_netid(self) -> Optional[bool]:
-        return self.active and self.netid == self.username
+        return self.active and self.netid is not None and self.username == self.netid
 
     @computed_field
     @property
     def auth_username(self) -> Optional[bool]:
-        return self.active and self.netid != self.username
+        return self.active and self.netid is not None and self.username is not None and self.netid != self.username
 
 class UserApplicationView(BaseModel):
     # BaseForm fields

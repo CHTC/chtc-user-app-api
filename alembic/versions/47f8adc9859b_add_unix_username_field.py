@@ -33,22 +33,20 @@ def upgrade() -> None:
         sa.column('netid', sa.String(length=255)),
         sa.column('username', sa.String(length=255)),
     )
-    op.execute(
-        users_table.update()
-        .values(username=users_table.c.netid)
-    )
+
+    op.execute("""
+        UPDATE users
+        SET username = netid
+        WHERE active IS TRUE
+    """)
+
     for netid, username in netid_username_map.items():
         op.execute(
             users_table.update()
             .where(users_table.c.netid == netid)
             .values(username=username)
         )
-    op.execute("""
-        UPDATE users
-        SET username = 'legacy-user-' || id::text
-        WHERE username IS NULL
-    """)
-    op.alter_column('users', 'username', nullable=False)
+
     op.create_unique_constraint(op.f('users_username_key'), 'users', ['username'])
     op.execute("""
         CREATE VIEW joined_projects AS

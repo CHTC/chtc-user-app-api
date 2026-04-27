@@ -363,6 +363,39 @@ class TestUserAuthBehavior:
 
         assert "netid must be provided" in str(exc_info.value).lower()
 
+    def test_create_active_user_defaults_username_to_netid(self, admin_client: Client, project_factory):
+        project = project_factory()
+        user_payload = user_data_f(101, project["id"])
+        user_payload.pop("username")
+
+        create_response = admin_client.post("/users", json=user_payload)
+        assert create_response.status_code == 201, create_response.text
+        created_user = create_response.json()
+
+        assert created_user["username"] == created_user["netid"]
+        assert created_user["auth_netid"] is True
+        assert created_user["auth_username"] is False
+
+    def test_patch_user_can_set_distinct_username(self, admin_client: Client, project_factory):
+        project = project_factory()
+        user_payload = user_data_f(102, project["id"])
+
+        create_response = admin_client.post("/users", json=user_payload)
+        assert create_response.status_code == 201, create_response.text
+        created_user = create_response.json()
+
+        update_payload = {
+            "username": f"unixuser{random.randint(100000, 999999)}",
+        }
+        patch_response = admin_client.patch(f"/users/{created_user['id']}", json=update_payload)
+        assert patch_response.status_code == 200, patch_response.text
+        updated_user = patch_response.json()
+
+        assert updated_user["username"] == update_payload["username"]
+        assert updated_user["netid"] == created_user["netid"]
+        assert updated_user["auth_netid"] is False
+        assert updated_user["auth_username"] is True
+
     def test_user_endpoints_include_auth_compatibility_fields(self, admin_client: Client, project_factory):
         project = project_factory()
         user_payload = user_data_f(100, project["id"], username="unixuser100")

@@ -115,10 +115,19 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         }
         
         # Validate that the merged data conforms to the UserPost schema
-        UserPost(**merged_user_data)
+        validated_user = UserPost(**merged_user_data)
 
         # Update user
-        user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
+        user_update_data = user.model_dump(exclude_unset=True)
+        if (
+            validated_user.active
+            and "netid" in user_update_data
+            and "username" not in user_update_data
+        ):
+            user_update_data["username"] = validated_user.netid
+        if validated_user.username != current_user.username:
+            user_update_data["username"] = validated_user.username
+        user_data_only = UserPatch(**user_update_data)
         updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=user_load_options)
 
         # Update Submit Nodes if patched
