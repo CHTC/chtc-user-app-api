@@ -82,7 +82,7 @@ class UserPost(BaseModel):
 
     name: str
     username: str
-    email1: EmailStr
+    email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
     netid_exp_datetime: Optional[datetime] = Field(default=None)

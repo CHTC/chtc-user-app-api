@@ -171,7 +171,8 @@ class TestUsers:
 
         user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
 
-        assert user_payload.status_code == 400, f"Cannot nullify email1, should return a 500 status code, instead got {user_payload.text}"
+        assert user_payload.status_code == 200, f"Nullifying email1 should return a 200 status code, instead got {user_payload.text}"
+        assert user_payload.json()["email1"] is None, "email1 should be null after patching with an empty string"
 
     def test_user_get_self(self, user, nonadmin_client):
         """Test that a user can get their own details"""
