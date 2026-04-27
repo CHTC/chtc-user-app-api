@@ -460,11 +460,12 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
                 user_info = user_info_resp.json()
                 print(user_info)
 
+                # name is required so fallback to netid if no name is found
                 user = UserTable(
-                    # name is required so fallback to netid if no name is found
                     name=user_info.get("name") or user_info.get("sub"),
                     email1=user_info["email"],
                     netid=user_info.get("sub"),
+                    username=user_info.get("sub"),
                     active=False,
                     is_admin=False,
                 )

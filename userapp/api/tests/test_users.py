@@ -1,8 +1,13 @@
 import random
 
 from httpx import Client
+import pytest
+from pydantic import ValidationError
 
 from userapp.api.tests.fake_data import user_data_f
+from userapp.core.models.enum import RoleEnum
+from userapp.core.schemas.general import JoinedProjectView
+from userapp.core.schemas.users import UserGet, UserPost
 
 class TestUsers:
 
@@ -52,7 +57,7 @@ class TestUsers:
         fetched_user = user_response.json()
         assert fetched_user['id'] == user['id'], "Fetched user ID should match the created user ID"
         assert fetched_user['name'] == user['name'], "Fetched user name should match the created user name"
-        assert fetched_user['username'] is None, "Fetched user username should be None"
+        assert fetched_user['username'] == user['username'], "Fetched user username should match the created user username"
 
     def test_update_user_simple(self, admin_client: Client, user_factory, project_factory):
         """Test updating an existing user"""
@@ -297,3 +302,85 @@ class TestUsers:
 
         updated_data = user_payload.json()
         assert len(updated_data['submit_nodes']) > 0, "User's submit nodes should not be removed when patching with an empty list"
+
+
+def schema_user_data(**overrides):
+    data = {
+        "id": 1,
+        "username": "testnetid",
+        "name": "Test User",
+        "email1": "test@example.com",
+        "active": True,
+        "netid": "testnetid",
+    }
+    data.update(overrides)
+    return data
+
+
+def schema_project_view_data(**overrides):
+    data = {
+        "id": 1,
+        "project_id": 10,
+        "project_name": "Test Project",
+        "username": "testnetid",
+        "name": "Test User",
+        "email1": "test@example.com",
+        "active": True,
+        "netid": "testnetid",
+        "role": RoleEnum.PI,
+    }
+    data.update(overrides)
+    return data
+
+
+def expected_auth_netid(user_data: dict) -> bool | None:
+    return user_data["active"] and user_data["netid"] == user_data["username"]
+
+
+def expected_auth_username(user_data: dict) -> bool:
+    return user_data["netid"] != user_data["username"]
+
+
+class TestUserAuthBehavior:
+    def test_schema_computed_fields_follow_username_and_netid(self):
+        netid_user = UserGet(**schema_user_data(active=True, username="testnetid", netid="testnetid"))
+        username_user = UserGet(**schema_user_data(active=True, username="unixuser", netid="testnetid"))
+        inactive_project_view = JoinedProjectView(
+            **schema_project_view_data(active=False, username="unixuser", netid="testnetid", role=RoleEnum.MEMBER)
+        )
+
+        assert netid_user.auth_netid is True
+        assert netid_user.auth_username is False
+        assert username_user.auth_netid is False
+        assert username_user.auth_username is True
+        assert inactive_project_view.model_dump()["auth_netid"] is False
+        assert inactive_project_view.model_dump()["auth_username"] is False
+
+    def test_userpost_requires_netid_when_active(self):
+        with pytest.raises(ValidationError) as exc_info:
+            UserPost(**schema_user_data(username="testnetid", active=True, netid=None))
+
+        assert "netid must be provided" in str(exc_info.value).lower()
+
+    def test_user_endpoints_include_auth_compatibility_fields(self, admin_client: Client, project_factory):
+        project = project_factory()
+        user_payload = user_data_f(100, project["id"], username="unixuser100")
+        user_payload["netid"] = f"netid{random.randint(100000, 999999)}"
+        user_payload["active"] = True
+
+        create_response = admin_client.post("/users", json=user_payload)
+        assert create_response.status_code == 201, create_response.text
+        created_user = create_response.json()
+
+        get_response = admin_client.get(f"/users/{created_user['id']}")
+        assert get_response.status_code == 200, get_response.text
+        fetched_user = get_response.json()
+
+        projects_response = admin_client.get(f"/users/{created_user['id']}/projects")
+        assert projects_response.status_code == 200, projects_response.text
+        project_view = projects_response.json()[0]
+
+        assert fetched_user["auth_netid"] == expected_auth_netid(fetched_user)
+        assert fetched_user["auth_username"] == expected_auth_username(fetched_user)
+        assert project_view["auth_netid"] == expected_auth_netid(project_view)
+        assert project_view["auth_username"] == (project_view["active"] and expected_auth_username(project_view))

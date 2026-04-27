@@ -97,6 +97,7 @@ class User(Base):
     email1 = Column(String(255), nullable=False)
     email2 = Column(String(255))
     netid = Column(String(255)) # Made unique via a Table constraint
+    username = Column(String(255), unique=True, nullable=False)
     netid_exp_datetime = Column(TIMESTAMP)
     phone1 = Column(String(255))
     phone2 = Column(String(255))

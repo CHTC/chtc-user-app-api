@@ -97,6 +97,25 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         return await update_one_endpoint(session, UserTable, user_id, user_update_schema, load_options=user_load_options)
 
     elif is_admin:
+        current_user = await get_one_endpoint(session, UserTable, user_id)
+        merged_user_data = {
+            "name": current_user.name,
+            "username": current_user.username,
+            "email1": current_user.email1,
+            "email2": current_user.email2,
+            "netid": current_user.netid,
+            "netid_exp_datetime": current_user.netid_exp_datetime,
+            "phone1": current_user.phone1,
+            "phone2": current_user.phone2,
+            "is_admin": current_user.is_admin,
+            "active": current_user.active,
+            "unix_uid": current_user.unix_uid,
+            "position": current_user.position,
+            **user.model_dump(exclude_unset=True, exclude={"submit_nodes"}),
+        }
+        
+        # Validate that the merged data conforms to the UserPost schema
+        UserPost(**merged_user_data)
 
         # Update user
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
