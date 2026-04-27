@@ -39,6 +39,7 @@ class JoinedProjectView(BaseModel):
     project_accounting_group: Optional[str] = Field(default=None)
     is_primary: Optional[bool] = Field(default=None)
     name: str
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -56,14 +57,12 @@ class JoinedProjectView(BaseModel):
     @computed_field
     @property
     def auth_netid(self) -> Optional[bool]:
-        """Backwards compatibility: maps to active field"""
-        return self.active
+        return self.active and self.username == self.netid
 
     @computed_field
     @property
-    def auth_username(self) -> bool:
-        """Backwards compatibility: always returns False"""
-        return False
+    def auth_username(self) -> Optional[bool]:
+        return self.active and self.netid != self.username
 
 class UserApplicationView(BaseModel):
     # BaseForm fields
