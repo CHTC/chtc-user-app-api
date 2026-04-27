@@ -74,12 +74,12 @@ class UserGet(BaseModel):
     @computed_field
     @property
     def auth_netid(self) -> Optional[bool]:
-        return self.active and self.netid is not None and self.username == self.netid
+        return self.active and self.username == self.netid
 
     @computed_field
     @property
     def auth_username(self) -> Optional[bool]:
-        return self.active and self.netid is not None and self.username is not None and self.netid != self.username
+        return self.active and self.netid != self.username
 
 class UserGetFull(UserGet):
 
