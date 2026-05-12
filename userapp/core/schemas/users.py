@@ -11,14 +11,6 @@ from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
 
 
-def _normalize_active_identity(active: Optional[bool], netid: Optional[str], username: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    if active and not netid:
-        raise ValueError("If active is True, netid must be provided.")
-    if active and not username:
-        username = netid
-    return netid, username
-
-
 class UserTableSchema(BaseModel):
     """Used to represent a user as stored in the database"""
 
@@ -42,11 +34,6 @@ class UserTableSchema(BaseModel):
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str | None:
         return position.name if position is not None else None
-
-    @model_validator(mode="after")
-    def normalize_active_identity(self):
-        self.netid, self.username = _normalize_active_identity(self.active, self.netid, self.username)
-        return self
 
 
 class UserGet(BaseModel):
@@ -112,7 +99,8 @@ class UserPost(BaseModel):
 
     @model_validator(mode="after")
     def check_active_requires_netid(self):
-        self.netid, self.username = _normalize_active_identity(self.active, self.netid, self.username)
+        if self.active and not self.netid:
+            raise ValueError("If active is True, netid must be provided.")
         return self
 
 
@@ -144,11 +132,6 @@ class UserPatch(BaseModel):
     def serialize_position(self, position: PositionEnum) -> str:
         return position.name if position is not None else None
 
-    @model_validator(mode="after")
-    def check_active_requires_identity(self):
-        if self.active:
-            self.netid, self.username = _normalize_active_identity(self.active, self.netid, self.username)
-        return self
 
 class UserPatchFull(UserPatch):
 

@@ -47,7 +47,6 @@ def upgrade() -> None:
     op.execute("""
         UPDATE users
         SET username = netid
-        WHERE active IS TRUE
     """)
 
     for netid, username in netid_username_map.items():
