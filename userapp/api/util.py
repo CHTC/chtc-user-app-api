@@ -181,9 +181,9 @@ def format_escaped_template(template: str, **kwargs) -> str:
 
 def send_email(send_from: str, send_to: Union[str, list], subject: str, text: str, cc: Union[str, list] = None, reply_to: Union[str, list] = None, server=SMTP_SERVER, port=SMTP_PORT):
 
-    # Don't send emails outside of production
-    if os.getenv("PYTHON_ENV") != "production":
-        print("Fake sending an email!", send_from, send_to, cc, reply_to, subject, text)
+    # Don't send emails outside of production or when SEND_EMAIL is false
+    if os.getenv("PYTHON_ENV") != "production" or os.getenv("SEND_EMAILS", "false") == "false":
+        print("Fake sending an email!")
         return
 
     msg = MIMEMultipart()
