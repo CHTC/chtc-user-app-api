@@ -69,6 +69,20 @@ class TestUserFormPost:
         assert response_json["pi_name"] == payload["pi_name"]
         assert response_json["pi_email"] == payload["pi_email"]
 
+    def test_create_errors_on_invalid_email(self, user: dict, nonadmin_client: Client, admin_client: Client):
+        """A user form can be submitted with PI name/email instead of a PI id."""
+
+        # Mark user innactive for testing
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+
+        payload = user_form_data_f()
+        payload["pi_email"] = "Not a valid email address"
+        response = nonadmin_client.post("/forms/user-applications", json=payload)
+
+        assert response.status_code == 422, (
+            f"POST /forms/user-applications with invalid pi_email should return 422, got {response.status_code}: {response.text}"
+        )
+
     def test_create_accepts_pi_id(self, user: dict, nonadmin_client: Client, admin_client: Client, user_factory, project_factory):
         """A user form can be submitted with an existing PI id and no PI name/email."""
 

@@ -42,7 +42,7 @@ class UserFormPost(BaseModel):
     email: Optional[EmailStr] = Field(default=None)
     pi_id: Optional[int] = Field(default=None)
     pi_name: Optional[str] = Field(default=None)
-    pi_email: Optional[str] = Field(default=None)
+    pi_email: Optional[EmailStr] = Field(default=None)
     position: PositionEnum
 
     # JSONB values for form v1
