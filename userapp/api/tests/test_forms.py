@@ -723,4 +723,26 @@ class TestEmailOnForm:
             f"got {response.status_code}: {response.text}"
         )
 
+    def test_department_field_is_stored(
+            self,
+            user: dict,
+            nonadmin_client: Client,
+            admin_client: Client,
+    ):
+        """A user who already has email1 from their OIDC provider doesn't need to provide email on the form."""
 
+        # Mark inactive
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+
+        response = nonadmin_client.post("/forms/user-applications", json=form_data)
+
+        assert response.status_code == 201, (
+            f"A user with email1 should be able to submit a form without providing email, "
+            f"got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data['content']["department"] is not None

@@ -51,6 +51,7 @@ class UserFormPost(BaseModel):
     # Optional
     mentor_name: Optional[str] = Field(default=None)
     mentor_email: Optional[str] = Field(default=None)
+    department: Optional[str] = Field(default=None)
     marketing_attribution: Optional[str] = Field(default=None)
     research_computing_area: Optional[str] = Field(default=None)
     software_link: Optional[str] = Field(default=None)
