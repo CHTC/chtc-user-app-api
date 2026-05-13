@@ -56,13 +56,30 @@ class JoinedProjectView(BaseModel):
 
     @computed_field
     @property
-    def auth_netid(self) -> Optional[bool]:
-        return self.active and self.username == self.netid
+    def auth_netid(self) -> bool:
+        # Check that we can even give them auth_netid with normal conditions
+        if not self.active or self.netid is None:
+            return False
+
+        # Now we do a switch case for backward compatibility
+        # If the have a username that is defined but is different from their netid then we only want to enable auth_username
+        if self.username is not None and self.netid != self.username:
+            return False
+
+        # Otherwise this is the traditional case where they are active and have a netid so they can auth with it
+        return True
 
     @computed_field
     @property
-    def auth_username(self) -> Optional[bool]:
-        return self.active and self.netid != self.username
+    def auth_username(self) -> bool:
+        """Used for backwards compatibility - returns true if both netid and username are set but different"""
+
+        # First check the correct value are set and the user is active
+        if not self.active or self.username is None or self.netid is None:
+            return False
+
+        # If the values are set but diverge then we prefer the username
+        return self.username != self.netid
 
 class UserApplicationView(BaseModel):
     # BaseForm fields
