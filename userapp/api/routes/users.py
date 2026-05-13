@@ -97,7 +97,6 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         return await update_one_endpoint(session, UserTable, user_id, user_update_schema, load_options=user_load_options)
 
     elif is_admin:
-
         # Update user
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
         updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=user_load_options)

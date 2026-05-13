@@ -46,6 +46,7 @@ class JoinedProjectView(Base):
     project_accounting_group = Column(String(255))
     is_primary = Column(Boolean)
     name = Column(String(255))
+    username = Column(String(255))
     email1 = Column(String(255))
     email2 = Column(String(255))
     netid = Column(String(255)) # Should be unique post transition

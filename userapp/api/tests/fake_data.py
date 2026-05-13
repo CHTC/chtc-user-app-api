@@ -34,7 +34,7 @@ def project_data_f(
     }
 
 
-def user_data_f(index: int, primary_project_id, is_admin=False) -> dict:
+def user_data_f(index: int, primary_project_id, is_admin=False, username: Optional[str] = None) -> dict:
     """
     Generate a unique user payload for testing, based on the UserBase schema.
     """
@@ -44,6 +44,7 @@ def user_data_f(index: int, primary_project_id, is_admin=False) -> dict:
         "email1": f"testuser{rand}@example.com",
         "email2": f"altuser{rand}@example.com",
         "netid": f"netid{rand}",
+        "username": username or f"netid{rand}",
         "netid_exp_datetime": datetime.now().isoformat(),
         "phone1": f"555-010{index}",
         "phone2": f"555-020{index}",

@@ -18,6 +18,7 @@ class UserTableSchema(BaseModel):
 
     id: Optional[int] = Field(default=None)
     name: str
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -40,7 +41,7 @@ class UserGet(BaseModel):
 
     id: Optional[int] = Field(default=None)
     name: str
-    username: None = Field(default=None)
+    username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -59,13 +60,30 @@ class UserGet(BaseModel):
 
     @computed_field
     @property
-    def auth_netid(self) -> Optional[bool]:
-        return self.active
+    def auth_netid(self) -> bool:
+        # Check that we can even give them auth_netid with normal conditions
+        if not self.active or self.netid is None:
+            return False
+
+        # Now we do a switch case for backward compatibility
+        # If the have a username that is defined but is different from their netid then we only want to enable auth_username
+        if self.username is not None and self.netid != self.username:
+            return False
+
+        # Otherwise this is the traditional case where they are active and have a netid so they can auth with it
+        return True
 
     @computed_field
     @property
     def auth_username(self) -> bool:
-        return False
+        """Used for backwards compatibility - returns true if both netid and username are set but different"""
+
+        # First check the correct value are set and the user is active
+        if not self.active or self.username is None or self.netid is None:
+            return False
+
+        # If the values are set but diverge then we prefer the username
+        return self.username != self.netid
 
 class UserGetFull(UserGet):
 
@@ -80,6 +98,7 @@ class UserPost(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     name: str
+    username: Optional[str] = Field(default=None)
     email1: EmailStr
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
@@ -117,6 +136,7 @@ class UserPatch(BaseModel):
     email1: Optional[EmailStr] = Field(default=None)
     email2: Optional[EmailStr] = Field(default=None)
     netid: Optional[str] = Field(default=None)
+    username: Optional[str] = Field(default=None)
     netid_exp_datetime: Optional[datetime] = Field(default=None)
     phone1: Optional[str] = Field(default=None)
     phone2: Optional[str] = Field(default=None)
@@ -128,6 +148,7 @@ class UserPatch(BaseModel):
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
         return position.name if position is not None else None
+
 
 class UserPatchFull(UserPatch):
 
