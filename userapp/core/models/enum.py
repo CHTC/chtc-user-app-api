@@ -28,3 +28,9 @@ class FormStatusEnum(Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     DENIED = "DENIED"
+
+class EntityManagerEnum(Enum):
+    """Enum to record what is managing a given entity"""
+    APPLICATION = "APPLICATION" # Default - Userapp manual management
+    MANIFEST = "MANIFEST" # Manifest Groups
+    MORGRIDGE_AD = "MORGRIDGE_ACTIVE_DIRECTORY"

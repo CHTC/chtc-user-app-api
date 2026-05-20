@@ -184,7 +184,7 @@ def user(existing_admin_client: Client, project_factory: Callable, group_factory
     user = user_factory(0, project_id=project['id'])
 
     # Add the group after the user is created
-    group_addition_response = existing_admin_client.post(f"/groups/{group['id']}/users", json={"id": user['id']})
+    group_addition_response = existing_admin_client.post(f"/groups/{group['id']}/users", json={"user_id": user['id']})
     assert group_addition_response.status_code == 201
 
     user = existing_admin_client.get(f"/users/{user['id']}").json()

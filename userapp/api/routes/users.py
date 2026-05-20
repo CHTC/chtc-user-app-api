@@ -12,11 +12,11 @@ from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoin
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
     RestrictedUserPatch, UserTableSchema, UserGetFull
 from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema
-from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema
+from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupView as UserGroupViewSchema
 from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
-    UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView
+    UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView, UserGroupView as UserGroupViewTable
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 from userapp.api.load_options import user_load_options
 from userapp.api.routes._util import _patch_user_submit_nodes
@@ -24,6 +24,8 @@ from userapp.api.routes._util import _patch_user_submit_nodes
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
+UserGroupViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
+
 
 router = APIRouter(
     prefix="/users",
@@ -131,14 +133,9 @@ async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0,
 
 
 @router.get("/{user_id}/groups")
-async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[GroupGet]:
+async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserGroupViewSchema]:
     """Get groups associated with a user"""
 
     # Join Group to User via the UserGroups association table and filter by user_id
-    select_stmt = (
-        select(Group)
-        .join(UserGroup, Group.id == UserGroup.group_id)
-        .join(UserTable, UserGroup.user_id == UserTable.id)
-        .where(UserTable.id == user_id)
-    )
-    return await list_select_stmt(session, select_stmt, Group, response, filter_query_params, page, page_size)
+    select_stmt = select(UserGroupViewTable).where(UserGroupViewTable.user_id == user_id)
+    return await list_select_stmt(session, select_stmt, UserGroupViewTable, response, filter_query_params, page, page_size)

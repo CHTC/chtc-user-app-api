@@ -5,12 +5,14 @@ from typing import List
 
 from sqlalchemy import select, delete
 
+from userapp.core.models.views import GroupUserView
+from userapp.core.schemas.user_group import UserGroupPost
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
 from userapp.api.routes.security import check_is_admin
 from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoint, update_one_endpoint, list_select_stmt, \
     delete_one_endpoint, with_db_error_handling
-from userapp.core.schemas.general import Relationship
+from userapp.core.schemas.general import Relationship, GroupUserView as GroupUserViewSchema
 from userapp.core.schemas.groups import GroupGet, GroupPost, GroupPatch
 from userapp.core.schemas.users import UserGet
 
@@ -54,18 +56,18 @@ async def update_group(group_id: int, group: GroupPatch, session=Depends(session
 
 
 @router.get("/{group_id}/users")
-async def get_group_users(group_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> List[UserGet]:
+async def get_group_users(group_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> List[GroupUserViewSchema]:
     """Get users associated with a group"""
 
-    select_stmt = select(UserTable).join(UserGroup).where(UserGroup.group_id == group_id)
-    return await list_select_stmt(session, select_stmt, UserTable, response, filter_query_params, page, page_size)
+    select_stmt = select(GroupUserView).where(GroupUserView.group_id == group_id)
+    return await list_select_stmt(session, select_stmt, GroupUserView, response, filter_query_params, page, page_size)
 
 @with_db_error_handling
 @router.post("/{group_id}/users", status_code=201)
-async def add_user_to_group(group_id: int, user: Relationship, session=Depends(session_generator)) -> dict:
+async def add_user_to_group(group_id: int, user: UserGroupPost, session=Depends(session_generator)) -> dict:
     """Add user to a group"""
 
-    user_group = UserGroup(user_id=user.id, group_id=group_id)
+    user_group = UserGroup(group_id=group_id, **user.model_dump(exclude_unset=True))
     session.add(user_group)
     return {"message": "Users added to group successfully"}
 

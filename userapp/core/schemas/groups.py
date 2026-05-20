@@ -4,6 +4,7 @@ import re
 
 from userapp.core.schemas.general import BaseModel
 
+
 def group_name_validator(name: str) -> str:
     if name is None:
         return name

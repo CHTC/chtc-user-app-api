@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, relationship
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
 from userapp.core.models.main import Base
 
 
@@ -44,7 +44,15 @@ class JoinedProjectView(Base):
     )
     project_last_contact = Column(TIMESTAMP)
     project_accounting_group = Column(String(255))
+
+    # From the Project -> Users ( Many )
+    created_at = Column(TIMESTAMP)
+    updated_at = Column(TIMESTAMP)
+    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
+    role = Column(SQLEnum(RoleEnum, name="role_enum"))
     is_primary = Column(Boolean)
+
+    # From the User
     name = Column(String(255))
     username = Column(String(255))
     email1 = Column(String(255))
@@ -58,7 +66,6 @@ class JoinedProjectView(Base):
     date = Column(TIMESTAMP)
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"))
-    role = Column(SQLEnum(RoleEnum, name="role_enum"))
     last_note_ticket = Column(String(9))
 
 
@@ -120,4 +127,52 @@ class UserApplicationView(Base):
         lazy="selectin",
         viewonly=True,
         foreign_keys="[UserApplicationView.pi_id]",
+    )
+
+
+class GroupUserView(Base):
+    """A view intended to show a groups users in the context of a known group"""
+    __tablename__ = 'group_users'
+    __table_args__ = {'info': dict(is_view=True)}
+
+    # Columns from UserGroup Table
+    group_id = Column(Integer, ForeignKey("groups.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
+    created_at = Column(TIMESTAMP)
+    updated_at = Column(TIMESTAMP)
+
+    # From User
+    name = Column(String(255))
+    netid = Column(String(255))
+    username = Column(String(255))
+    is_admin = Column(Boolean)
+    active = Column(Boolean)
+    unix_uid = Column(Integer)
+
+
+class UserGroupView(Base):
+    """A view intended to show a user's groups in the context of a known user"""
+    __tablename__ = 'user_group_memberships'
+    __table_args__ = {'info': dict(is_view=True)}
+
+    # Columns from UserGroup Table
+    group_id = Column(Integer, ForeignKey("groups.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
+    created_at = Column(TIMESTAMP)
+    updated_at = Column(TIMESTAMP)
+
+    # From Group
+    name = Column(String(255))
+    point_of_contact = Column(Integer)
+    unix_gid = Column(Integer)
+    has_groupdir = Column(Boolean)
+
+    point_of_contact_user: Mapped[Optional["User"]] = relationship(
+        "User",
+        primaryjoin="UserGroupView.point_of_contact==foreign(User.id)",
+        lazy="selectin",
+        viewonly=True,
+        foreign_keys="[UserGroupView.point_of_contact]",
     )

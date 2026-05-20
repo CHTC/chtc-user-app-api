@@ -7,11 +7,13 @@ from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 
-from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum, \
+    EntityManagerEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
 from userapp.core.models.views import UserApplicationView
+from userapp.core.models.views import UserGroupView
 
 
 class Group(Base):
@@ -106,9 +108,11 @@ class User(Base):
     phone2 = Column(String(255))
     is_admin = Column(Boolean, default=False)
     active = Column(Boolean, nullable=False, server_default='false')
-    date = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    date = Column(TIMESTAMP, nullable=False, server_default=func.now()) # TODO: Delete this after we have migrated to created_at
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
 
     notes: Mapped[List["Note"]] = relationship(
         secondary="user_notes",
@@ -133,13 +137,11 @@ class User(Base):
         viewonly=True,
     )
 
-    groups: Mapped[List["Group"]] = relationship(
-        secondary="user_groups",
-        primaryjoin="User.id==UserGroup.user_id",
-        secondaryjoin="Group.id==UserGroup.group_id",
-        foreign_keys="[UserGroup.user_id, UserGroup.group_id]",
-        lazy="selectin",
-        backref="users"
+    groups: Mapped[List["UserGroupView"]] = relationship(
+        "UserGroupView",
+        primaryjoin="User.id==UserGroupView.user_id",
+        foreign_keys="[UserGroupView.user_id]",
+        lazy="selectin"
     )
 
     user_forms: Mapped[List[UserApplicationView]] = relationship(
@@ -155,7 +157,14 @@ class UserGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey('groups.id', ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    __table_args__ = (UniqueConstraint('user_id', 'group_id', name='user_groups_distinct'),)
+    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"), nullable=False, server_default=EntityManagerEnum.APPLICATION.value)
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'group_id', name='user_groups_distinct'),
+        Index('idx_user_group_managed_by', 'group_id', 'managed_by', 'user_id'),
+    )
 
 
 class UserNote(Base):
@@ -179,7 +188,14 @@ class UserProject(Base):
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     role = Column(SQLEnum(RoleEnum, name="role_enum"), nullable=True)
     is_primary = Column(Boolean, nullable=False, default=False)
-    __table_args__ = (UniqueConstraint('user_id', 'project_id', name='user_projects_distinct'),)
+    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"), nullable=False, server_default=EntityManagerEnum.APPLICATION.value)
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'project_id', name='user_projects_distinct'),
+        Index('idx_user_project_managed_by', 'project_id', 'managed_by', 'user_id'),
+    )
 
 
 class UserSubmit(Base):
