@@ -9,12 +9,13 @@ from userapp.api.routes.security import check_is_admin, get_user_from_cookie
 from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoint, update_one_endpoint, delete_one_endpoint, \
     list_select_stmt
 from userapp.core.schemas.projects import ProjectGet, ProjectPost, ProjectPatch
-from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema
+from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema, UserProjectPatch
 from userapp.core.schemas.note import NoteGet, NoteTableSchema, NotePost, NoteGetFull
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema
 from userapp.core.models.tables import Project as ProjectTable, Note as NoteTable, UserNote, User, UserProject
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable
 from userapp.core.schemas.users import UserGet
+from userapp.api.routes._util import _patch_user_project
 
 # Rebuild fields that use forward references to avoid circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
@@ -109,6 +110,17 @@ async def remove_user_from_project(project_id: int, user_id: int, session=Depend
 
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="User not found in project")
+
+
+@router.patch("/{project_id}/users/{user_id}")
+async def patch_user_in_project(
+    project_id: int,
+    user_id: int,
+    patch: UserProjectPatch,
+    session=Depends(session_generator),
+) -> JoinedProjectViewSchema:
+    """Patch a user's membership in a project (role, is_primary, managed_by)."""
+    return await _patch_user_project(session, user_id, project_id, patch)
 
 
 @router.get("/{project_id}/notes")

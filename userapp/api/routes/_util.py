@@ -1,7 +1,12 @@
+from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from userapp.api.util import create_one_endpoint
-from userapp.core.models.tables import UserSubmit, User
+from userapp.core.models.tables import UserSubmit, User, UserProject, UserGroup
+from userapp.core.models.views import JoinedProjectView, UserGroupView
+from userapp.core.schemas.user_project import UserProjectPatch
+from userapp.core.schemas.user_group import UserGroupPatch
 from userapp.core.schemas.user_submit import UserSubmitTableSchema, UserSubmitPost
 
 
@@ -32,3 +37,73 @@ async def _patch_user_submit_nodes(session: AsyncSession, user: User, new_submit
                 **submit_node.model_dump(),
             )
             await create_one_endpoint(session, UserSubmit, user_submit_model)
+
+
+async def _patch_user_project(
+    session: AsyncSession,
+    user_id: int,
+    project_id: int,
+    patch: UserProjectPatch,
+) -> JoinedProjectView:
+    """Patch the UserProject row identified by (user_id, project_id) and return
+    the matching row from the joined_projects view. Raises 404 if no such
+    membership exists."""
+
+    row = await session.scalar(
+        select(UserProject).where(
+            UserProject.user_id == user_id,
+            UserProject.project_id == project_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User {user_id} is not a member of project {project_id}",
+        )
+
+    for key, value in patch.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    await session.flush()
+
+    view_row = await session.scalar(
+        select(JoinedProjectView).where(
+            JoinedProjectView.id == user_id,
+            JoinedProjectView.project_id == project_id,
+        )
+    )
+    return view_row
+
+
+async def _patch_user_group(
+    session: AsyncSession,
+    user_id: int,
+    group_id: int,
+    patch: UserGroupPatch,
+) -> UserGroupView:
+    """Patch the UserGroup row identified by (user_id, group_id) and return the
+    matching row from the user_group_memberships view. Raises 404 if no such
+    membership exists."""
+
+    row = await session.scalar(
+        select(UserGroup).where(
+            UserGroup.user_id == user_id,
+            UserGroup.group_id == group_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User {user_id} is not a member of group {group_id}",
+        )
+
+    for key, value in patch.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    await session.flush()
+
+    view_row = await session.scalar(
+        select(UserGroupView).where(
+            UserGroupView.user_id == user_id,
+            UserGroupView.group_id == group_id,
+        )
+    )
+    return view_row
