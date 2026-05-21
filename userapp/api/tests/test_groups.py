@@ -1,5 +1,7 @@
 import random
 
+from userapp.core.models.enum import EntityManagerEnum
+
 group_data_f = lambda: {
     "name": f"test-group-{random.randint(0, 10000000)}",
     "point_of_contact": None,
@@ -225,7 +227,7 @@ class TestGroups:
         response = admin_client.post(
             f"/groups/{group_id}/users",
             json={
-                "id": user_id
+                "user_id": user_id
             }
         )
         assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
@@ -256,7 +258,7 @@ class TestGroups:
         response = admin_client.post(
             f"/groups/{group_id}/users",
             json={
-                "id": user_id
+                "user_id": user_id
             }
         )
         assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
@@ -308,7 +310,7 @@ class TestGroups:
         response = admin_client.post(
             f"/groups/{group_id}/users",
             json={
-                "id": user_id
+                "user_id": user_id
             }
         )
         assert response.status_code == 201, f"Adding a user to a group should return a 200 status code. Got {response.content} instead."
@@ -318,6 +320,48 @@ class TestGroups:
             f"/groups/{group_id}/users/{user_id}"
         )
         assert response.status_code == 204, f"Deleting a user from a group should return a 204 status code. Got {response.content} instead."
+
+    def test_add_user_to_group_default_managed_by(self, admin_client, group, user):
+        """Test that adding a user to a group without specifying managed_by defaults to APPLICATION"""
+
+        response = admin_client.post(
+            f"/groups/{group['id']}/users",
+            json={"user_id": user['id']}
+        )
+        assert response.status_code == 201, f"Adding a user to a group should return 201, got {response.text}"
+
+        users_response = admin_client.get(f"/groups/{group['id']}/users")
+        assert users_response.status_code == 200, f"Getting group users should return 200, got {users_response.text}"
+
+        group_users = users_response.json()
+        matched = [u for u in group_users if u['user_id'] == user['id']]
+        assert len(matched) == 1, "The added user should appear in the group's user list"
+        assert matched[0]['managed_by'] == EntityManagerEnum.APPLICATION.value, \
+            f"managed_by should default to APPLICATION, got {matched[0]['managed_by']}"
+
+        # Clean up
+        admin_client.delete(f"/groups/{group['id']}/users/{user['id']}")
+
+    def test_add_user_to_group_manifest_managed_by(self, admin_client, group, user):
+        """Test that adding a user to a group with managed_by=MANIFEST is persisted and returned correctly"""
+
+        response = admin_client.post(
+            f"/groups/{group['id']}/users",
+            json={"user_id": user['id'], "managed_by": EntityManagerEnum.MANIFEST.value}
+        )
+        assert response.status_code == 201, f"Adding a user to a group should return 201, got {response.text}"
+
+        users_response = admin_client.get(f"/groups/{group['id']}/users")
+        assert users_response.status_code == 200, f"Getting group users should return 200, got {users_response.text}"
+
+        group_users = users_response.json()
+        matched = [u for u in group_users if u['user_id'] == user['id']]
+        assert len(matched) == 1, "The added user should appear in the group's user list"
+        assert matched[0]['managed_by'] == EntityManagerEnum.MANIFEST.value, \
+            f"managed_by should be MANIFEST, got {matched[0]['managed_by']}"
+
+        # Clean up
+        admin_client.delete(f"/groups/{group['id']}/users/{user['id']}")
 
     def test_delete_group(self, admin_client):
         """Test deleting a group from the database"""

@@ -3,7 +3,7 @@ from typing import Optional, Annotated
 from datetime import datetime
 import re
 
-from userapp.core.schemas.general import JoinedProjectView, UserApplicationView as UserApplicationViewSchema
+from userapp.core.schemas.general import JoinedProjectView, UserApplicationView as UserApplicationViewSchema, UserGroupView
 from userapp.core.schemas.note import NoteGet
 from userapp.core.schemas.user_submit import UserSubmitGet, UserSubmitPost
 from userapp.core.schemas.general import BaseModel
@@ -33,7 +33,7 @@ class UserTableSchema(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str | None:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
 
 class UserGet(BaseModel):
@@ -56,7 +56,7 @@ class UserGet(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
     @computed_field
     @property
@@ -90,7 +90,7 @@ class UserGetFull(UserGet):
     notes: list["NoteGet"] = Field(default=[])
     submit_nodes: list["UserSubmitGet"] = Field(default=[])
     projects: list["JoinedProjectView"] = Field(default=[])
-    groups: list["GroupGet"] = Field(default=[])
+    groups: list["UserGroupView"] = Field(default=[])
     user_forms: list["UserApplicationViewSchema"] = Field(default=[])
 
 class UserPost(BaseModel):
@@ -112,7 +112,7 @@ class UserPost(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
     @model_validator(mode="after")
     def check_active_requires_netid(self):
@@ -147,7 +147,7 @@ class UserPatch(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
 
 class UserPatchFull(UserPatch):

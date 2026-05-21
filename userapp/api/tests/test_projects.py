@@ -1,4 +1,4 @@
-from userapp.core.models.enum import RoleEnum
+from userapp.core.models.enum import RoleEnum, EntityManagerEnum
 from userapp.api.tests.fake_data import project_data_f
 
 class TestProjects:
@@ -194,3 +194,55 @@ class TestProjects:
 
         user_ids_in_project = [user['id'] for user in project_users]
         assert user['id'] in user_ids_in_project, "The created user should be in the project's users list"
+
+    def test_add_user_to_project_default_managed_by(self, admin_client, project, user):
+        """Test that adding a user to a project without specifying managed_by defaults to APPLICATION"""
+
+        response = admin_client.post(
+            f"/projects/{project['id']}/users",
+            json={
+                "user_id": user['id'],
+                "is_primary": False,
+                "role": RoleEnum.MEMBER.value,
+            }
+        )
+        assert response.status_code == 201, f"Adding a user to a project should return 201, got {response.text}"
+
+        project_users_response = admin_client.get(f"/projects/{project['id']}/users")
+        assert project_users_response.status_code == 200, f"Getting project users should return 200, got {project_users_response.text}"
+
+        project_users = project_users_response.json()
+        matched = [u for u in project_users if u['id'] == user['id']]
+        assert len(matched) == 1, "The added user should appear in the project's user list"
+        assert matched[0]['managed_by'] == EntityManagerEnum.APPLICATION.value, \
+            f"managed_by should default to APPLICATION, got {matched[0]['managed_by']}"
+
+        # Clean up
+        admin_client.delete(f"/projects/{project['id']}/users/{user['id']}")
+
+    def test_add_user_to_project_manifest_managed_by(self, admin_client, project, user):
+        """Test that adding a user to a project with managed_by=MANIFEST is persisted and returned correctly"""
+
+        response = admin_client.post(
+            f"/projects/{project['id']}/users",
+            json={
+                "user_id": user['id'],
+                "is_primary": False,
+                "role": RoleEnum.MEMBER.value,
+                "managed_by": EntityManagerEnum.MANIFEST.value,
+            }
+        )
+        assert response.status_code == 201, f"Adding a user to a project should return 201, got {response.text}"
+
+        project_users_response = admin_client.get(f"/projects/{project['id']}/users")
+        assert project_users_response.status_code == 200, f"Getting project users should return 200, got {project_users_response.text}"
+
+        project_users = project_users_response.json()
+        matched = [u for u in project_users if u['id'] == user['id']]
+        assert len(matched) == 1, "The added user should appear in the project's user list"
+        assert matched[0]['managed_by'] == EntityManagerEnum.MANIFEST.value, \
+            f"managed_by should be MANIFEST, got {matched[0]['managed_by']}"
+
+        # Clean up
+        admin_client.delete(f"/projects/{project['id']}/users/{user['id']}")
+

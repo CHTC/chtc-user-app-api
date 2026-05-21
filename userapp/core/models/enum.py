@@ -29,6 +29,12 @@ class FormStatusEnum(Enum):
     APPROVED = "APPROVED"
     DENIED = "DENIED"
 
+class EntityManagerEnum(Enum):
+    """Enum to record what is managing a given entity"""
+    APPLICATION = "APPLICATION" # Default - Userapp manual management
+    MANIFEST = "MANIFEST" # Manifest Groups
+    MORGRIDGE_AD = "MORGRIDGE_ACTIVE_DIRECTORY"
+
 # I decided against using this so I could set the values in just the UI
 # Keeping it here just incase
 class DepartmentEnum(Enum):

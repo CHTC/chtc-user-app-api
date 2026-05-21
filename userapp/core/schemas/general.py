@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field, field_serializer
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum
+from userapp.core.models.enum import RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum, EntityManagerEnum
 
 
 class BaseModel(PydanticBaseModel):
@@ -37,7 +37,20 @@ class JoinedProjectView(BaseModel):
     project_status: Optional[str] = Field(default=None)
     project_last_contact: Optional[datetime] = Field(default=None)
     project_accounting_group: Optional[str] = Field(default=None)
+
+    # From the relationship
+    managed_by: EntityManagerEnum
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer('managed_by')
+    def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
+        return managed_by.value if managed_by is not None else None
+
     is_primary: Optional[bool] = Field(default=None)
+    role: Optional[RoleEnum] = Field(default=None)
+
+    # From the user
     name: str
     username: Optional[str] = Field(default=None)
     email1: Optional[EmailStr] = Field(default=None)
@@ -51,7 +64,6 @@ class JoinedProjectView(BaseModel):
     date: Optional[datetime] = Field(default=None)
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
-    role: Optional[RoleEnum] = Field(default=None)
     last_note_ticket: Optional[str] = Field(default=None)
 
     @computed_field
@@ -102,3 +114,45 @@ class UserApplicationViewFull(UserApplicationView):
     created_by: Optional["UserGet"] = Field(default=None, validation_alias='created_by_user')
     updated_by: Optional["UserGet"] = Field(default=None, validation_alias='updated_by_user')
     pi_user: Optional["UserGet"] = Field(default=None, validation_alias='pi_user')
+
+class GroupUserView(BaseModel):
+    """Represents a user record within the context of a known group. Known Group and its relationship to a User"""
+
+    # From UserGroup table
+    group_id: int
+    user_id: int
+    managed_by: Optional[EntityManagerEnum] = Field(default=None)
+    created_at: Optional[datetime] = Field(default=None)
+    updated_at: Optional[datetime] = Field(default=None)
+
+    @field_serializer('managed_by')
+    def serialize_managed_by(self, managed_by: EntityManagerEnum) -> Optional[str]:
+        return managed_by.value if managed_by is not None else None
+
+    # From User table
+    name: str
+    netid: Optional[str] = Field(default=None)
+    username: Optional[str] = Field(default=None)
+    is_admin: Optional[bool] = Field(default=None)
+    active: Optional[bool] = Field(default=None)
+    unix_uid: Optional[int] = Field(default=None)
+
+class UserGroupView(BaseModel):
+    """Represents a group record in the context of a known user. Known User and its relationship to a Group"""
+
+    # From UserGroup table
+    group_id: int
+    user_id: int
+    managed_by: Optional[EntityManagerEnum] = Field(default=None)
+    created_at: Optional[datetime] = Field(default=None)
+    updated_at: Optional[datetime] = Field(default=None)
+
+    @field_serializer('managed_by')
+    def serialize_managed_by(self, managed_by: EntityManagerEnum) -> Optional[str]:
+        return managed_by.value if managed_by is not None else None
+
+    # From the Group table
+    name: str
+    point_of_contact: Optional["UserGet"] = Field(default=None, validation_alias='point_of_contact_user')
+    unix_gid: Optional[int] = Field(default=None)
+    has_groupdir: bool
