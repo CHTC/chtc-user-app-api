@@ -139,9 +139,9 @@ class User(Base):
 
     groups: Mapped[List["UserGroupView"]] = relationship(
         "UserGroupView",
-        primaryjoin="User.id==UserGroupView.user_id",
-        foreign_keys="[UserGroupView.user_id]",
-        lazy="selectin"
+        primaryjoin="User.id==foreign(UserGroupView.user_id)",
+        lazy="selectin",
+        viewonly=True,
     )
 
     user_forms: Mapped[List[UserApplicationView]] = relationship(
