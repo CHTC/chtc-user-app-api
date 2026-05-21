@@ -136,8 +136,9 @@ class GroupUserView(Base):
     __table_args__ = {'info': dict(is_view=True)}
 
     # Columns from UserGroup Table
-    group_id = Column(Integer, ForeignKey("groups.id"), primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    # No ForeignKey declarations — this is a view; FK constraints don't exist on it.
+    group_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, primary_key=True)
     managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
     created_at = Column(TIMESTAMP)
     updated_at = Column(TIMESTAMP)
@@ -157,8 +158,9 @@ class UserGroupView(Base):
     __table_args__ = {'info': dict(is_view=True)}
 
     # Columns from UserGroup Table
-    group_id = Column(Integer, ForeignKey("groups.id"), primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    # No ForeignKey declarations — this is a view; FK constraints don't exist on it.
+    group_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, primary_key=True)
     managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
     created_at = Column(TIMESTAMP)
     updated_at = Column(TIMESTAMP)

@@ -46,3 +46,8 @@ class UserGroupPost(BaseModel):
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
         return managed_by.name if managed_by is not None else None
 
+
+class ManagedUserGroupPut(BaseModel):
+    """Used by a managed endpoint which has a url explicit managed_by and group_id"""
+
+    user_id: int

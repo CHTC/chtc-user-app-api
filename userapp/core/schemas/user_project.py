@@ -60,3 +60,11 @@ class UserProjectPost(BaseModel):
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
         return managed_by.name if managed_by is not None else None
+
+
+class ManagedUserProjectPut(BaseModel):
+    """Used by a managed endpoint which has a url explicit managed_by"""
+
+    user_id: int
+    role: Optional[RoleEnum] = None
+    is_primary: bool = False
