@@ -1,4 +1,4 @@
-from pydantic import EmailStr, AfterValidator, field_serializer, model_validator, ConfigDict, Field, computed_field
+from pydantic import EmailStr, AfterValidator, model_validator, ConfigDict, Field, computed_field
 from typing import Optional, Annotated
 from datetime import datetime
 import re
@@ -31,9 +31,6 @@ class UserTableSchema(BaseModel):
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
 
-    @field_serializer('position')
-    def serialize_position(self, position: PositionEnum) -> str | None:
-        return position.value if position is not None else None
 
 
 class UserGet(BaseModel):
@@ -54,9 +51,6 @@ class UserGet(BaseModel):
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
 
-    @field_serializer('position')
-    def serialize_position(self, position: PositionEnum) -> str:
-        return position.value if position is not None else None
 
     @computed_field
     @property
@@ -110,10 +104,6 @@ class UserPost(BaseModel):
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
 
-    @field_serializer('position')
-    def serialize_position(self, position: PositionEnum) -> str:
-        return position.value if position is not None else None
-
     @model_validator(mode="after")
     def check_active_requires_netid(self):
         if self.active and not self.netid:
@@ -145,9 +135,6 @@ class UserPatch(BaseModel):
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
 
-    @field_serializer('position')
-    def serialize_position(self, position: PositionEnum) -> str:
-        return position.value if position is not None else None
 
 
 class UserPatchFull(UserPatch):
