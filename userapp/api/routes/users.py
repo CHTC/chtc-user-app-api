@@ -11,7 +11,8 @@ from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoin
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
     RestrictedUserPatch, UserTableSchema, UserGetFull
-from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema
+from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema, UserProjectPatch
+from userapp.core.schemas.user_group import UserGroupPatch
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupView as UserGroupViewSchema
 from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
 from userapp.core.schemas.note import NoteGet
@@ -19,7 +20,7 @@ from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTabl
     UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView, UserGroupView as UserGroupViewTable
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 from userapp.api.load_options import user_load_options
-from userapp.api.routes._util import _patch_user_submit_nodes
+from userapp.api.routes._util import _patch_user_submit_nodes, _patch_user_project, _patch_user_group
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
@@ -139,3 +140,28 @@ async def get_user_groups(user_id: int, response: Response, page: int = 0, page_
     # Join Group to User via the UserGroups association table and filter by user_id
     select_stmt = select(UserGroupViewTable).where(UserGroupViewTable.user_id == user_id)
     return await list_select_stmt(session, select_stmt, UserGroupViewTable, response, filter_query_params, page, page_size)
+
+
+@router.patch("/{user_id}/projects/{project_id}")
+async def patch_user_project(
+    user_id: int,
+    project_id: int,
+    patch: UserProjectPatch,
+    session=Depends(session_generator),
+    check_is_admin=Depends(check_is_admin),
+) -> JoinedProjectViewSchema:
+    """Patch a user's membership in a project (role, is_primary, managed_by)."""
+    return await _patch_user_project(session, user_id, project_id, patch)
+
+
+@router.patch("/{user_id}/groups/{group_id}")
+async def patch_user_group(
+    user_id: int,
+    group_id: int,
+    patch: UserGroupPatch,
+    session=Depends(session_generator),
+    check_is_admin=Depends(check_is_admin),
+) -> UserGroupViewSchema:
+    """Patch a user's membership in a group (managed_by)."""
+    return await _patch_user_group(session, user_id, group_id, patch)
+

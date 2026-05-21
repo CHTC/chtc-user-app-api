@@ -6,13 +6,14 @@ from typing import List
 from sqlalchemy import select, delete
 
 from userapp.core.models.views import GroupUserView
-from userapp.core.schemas.user_group import UserGroupPost
+from userapp.core.schemas.user_group import UserGroupPost, UserGroupPatch
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
 from userapp.api.routes.security import check_is_admin
+from userapp.api.routes._util import _patch_user_group
 from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoint, update_one_endpoint, list_select_stmt, \
     delete_one_endpoint, with_db_error_handling
-from userapp.core.schemas.general import Relationship, GroupUserView as GroupUserViewSchema
+from userapp.core.schemas.general import Relationship, GroupUserView as GroupUserViewSchema, UserGroupView as UserGroupViewSchema
 from userapp.core.schemas.groups import GroupGet, GroupPost, GroupPatch
 from userapp.core.schemas.users import UserGet
 
@@ -86,3 +87,16 @@ async def remove_user_from_group(group_id: int, user_id: int, session=Depends(se
 
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="User not found in group")
+
+
+@with_db_error_handling
+@router.patch("/{group_id}/users/{user_id}")
+async def patch_user_in_group(
+    group_id: int,
+    user_id: int,
+    patch: UserGroupPatch,
+    session=Depends(session_generator),
+) -> UserGroupViewSchema:
+    """Patch a user's membership in a group (managed_by)."""
+    return await _patch_user_group(session, user_id, group_id, patch)
+
