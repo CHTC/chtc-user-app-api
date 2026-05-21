@@ -61,8 +61,13 @@ async def _patch_user_project(
             detail=f"User {user_id} is not a member of project {project_id}",
         )
 
-    for key, value in patch.model_dump(exclude_unset=True).items():
-        setattr(row, key, value)
+    # Iterate set fields and copy native Python values (e.g. Enum members)
+    # straight to the ORM row. Avoid model_dump() here: model_dump() runs any
+    # @field_serializer on the schema, which can downgrade an Enum member to
+    # its .value string and break SQLAlchemy's name-based enum binding (the
+    # Postgres entity_manager_enum type stores .name, not .value).
+    for key in patch.model_fields_set:
+        setattr(row, key, getattr(patch, key))
     await session.flush()
 
     view_row = await session.scalar(
@@ -96,8 +101,11 @@ async def _patch_user_group(
             detail=f"User {user_id} is not a member of group {group_id}",
         )
 
-    for key, value in patch.model_dump(exclude_unset=True).items():
-        setattr(row, key, value)
+    # See note in _patch_user_project: avoid model_dump() so Enum members are
+    # passed to SQLAlchemy as members (bound by .name) rather than as their
+    # serialized .value strings.
+    for key in patch.model_fields_set:
+        setattr(row, key, getattr(patch, key))
     await session.flush()
 
     view_row = await session.scalar(

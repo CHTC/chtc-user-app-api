@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field, field_serializer
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field
 
 from userapp.core.models.enum import RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum, EntityManagerEnum
 
@@ -43,9 +43,6 @@ class JoinedProjectView(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    @field_serializer('managed_by')
-    def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.value if managed_by is not None else None
 
     is_primary: Optional[bool] = Field(default=None)
     role: Optional[RoleEnum] = Field(default=None)
@@ -125,9 +122,6 @@ class GroupUserView(BaseModel):
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
 
-    @field_serializer('managed_by')
-    def serialize_managed_by(self, managed_by: EntityManagerEnum) -> Optional[str]:
-        return managed_by.value if managed_by is not None else None
 
     # From User table
     name: str
@@ -147,9 +141,6 @@ class UserGroupView(BaseModel):
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
 
-    @field_serializer('managed_by')
-    def serialize_managed_by(self, managed_by: EntityManagerEnum) -> Optional[str]:
-        return managed_by.value if managed_by is not None else None
 
     # From the Group table
     name: str
