@@ -16,7 +16,7 @@ class UserProjectTableSchema(BaseModel):
     user_id: int
     role: Optional[RoleEnum] = Field(default=None)
     is_primary: bool
-    managed_by: Optional[EntityManagerEnum] = Field(default=None)
+    managed_by: EntityManagerEnum = Field(default=EntityManagerEnum.APPLICATION)
     updated_at: Optional[datetime] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
 
@@ -51,7 +51,7 @@ class UserProjectPost(BaseModel):
     user_id: int
     role: Optional[RoleEnum] = None
     is_primary: bool = False
-    managed_by: Optional[EntityManagerEnum] = None
+    managed_by: EntityManagerEnum = EntityManagerEnum.APPLICATION
 
     @field_serializer('role')
     def serialize_role(self, role: RoleEnum) -> str:
