@@ -110,6 +110,7 @@ async def create_user_form(
         "computing_type": form.computing_type,
         "mentor_name": form.mentor_name,
         "mentor_email": form.mentor_email,
+        "department": form.department,
         "marketing_attribution": form.marketing_attribution,
         "research_computing_area": form.research_computing_area,
         "software_link": form.software_link,

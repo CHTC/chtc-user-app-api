@@ -69,6 +69,20 @@ class TestUserFormPost:
         assert response_json["pi_name"] == payload["pi_name"]
         assert response_json["pi_email"] == payload["pi_email"]
 
+    def test_create_errors_on_invalid_email(self, user: dict, nonadmin_client: Client, admin_client: Client):
+        """A user form can be submitted with PI name/email instead of a PI id."""
+
+        # Mark user innactive for testing
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+
+        payload = user_form_data_f()
+        payload["pi_email"] = "Not a valid email address"
+        response = nonadmin_client.post("/forms/user-applications", json=payload)
+
+        assert response.status_code == 422, (
+            f"POST /forms/user-applications with invalid pi_email should return 422, got {response.status_code}: {response.text}"
+        )
+
     def test_create_accepts_pi_id(self, user: dict, nonadmin_client: Client, admin_client: Client, user_factory, project_factory):
         """A user form can be submitted with an existing PI id and no PI name/email."""
 
@@ -709,4 +723,26 @@ class TestEmailOnForm:
             f"got {response.status_code}: {response.text}"
         )
 
+    def test_department_field_is_stored(
+            self,
+            user: dict,
+            nonadmin_client: Client,
+            admin_client: Client,
+    ):
+        """A user who already has email1 from their OIDC provider doesn't need to provide email on the form."""
 
+        # Mark inactive
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+        assert r.status_code == 200
+
+        form_data = user_form_data_f()
+
+        response = nonadmin_client.post("/forms/user-applications", json=form_data)
+
+        assert response.status_code == 201, (
+            f"A user with email1 should be able to submit a form without providing email, "
+            f"got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data['content']["department"] is not None

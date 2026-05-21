@@ -71,6 +71,7 @@ def user_form_data_f() -> dict:
         "position": "POSTDOC",
         "how_chtc_can_help": "Research computing support",
         "computing_type": "High throughput computing",
+        "department": f"department-{rand}",
         "mentor_name": f"Mentor {rand}",
         "mentor_email": f"cool-{rand}@gmail.com",
         "marketing_attribution": convert_to_none_sometimes(f"Cool attribution {rand}"),
