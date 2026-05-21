@@ -22,11 +22,11 @@ class UserProjectTableSchema(BaseModel):
 
     @field_serializer('role')
     def serialize_role(self, role: RoleEnum) -> str:
-        return role.name if role is not None else None
+        return role.value if role is not None else None
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 class UserProjectGet(UserProjectTableSchema):
     """Exact same as UserProjectTableSchema for now, but kept separate for future changes"""
@@ -40,11 +40,11 @@ class UserProjectPatch(BaseModel):
 
     @field_serializer('role')
     def serialize_role(self, role: RoleEnum) -> str:
-        return role.name if role is not None else None
+        return role.value if role is not None else None
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 
 class UserProjectPost(BaseModel):
@@ -55,11 +55,11 @@ class UserProjectPost(BaseModel):
 
     @field_serializer('role')
     def serialize_role(self, role: RoleEnum) -> str:
-        return role.name if role is not None else None
+        return role.value if role is not None else None
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 
 class ManagedUserProjectPut(BaseModel):

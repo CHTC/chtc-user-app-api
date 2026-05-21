@@ -15,7 +15,7 @@ class UserGroupBase(BaseModel):
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 
 class UserGroupGet(BaseModel):
@@ -27,7 +27,7 @@ class UserGroupGet(BaseModel):
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 
 class UserGroupPatch(BaseModel):
@@ -35,7 +35,7 @@ class UserGroupPatch(BaseModel):
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 
 class UserGroupPost(BaseModel):
@@ -44,7 +44,7 @@ class UserGroupPost(BaseModel):
 
     @field_serializer('managed_by')
     def serialize_managed_by(self, managed_by: EntityManagerEnum) -> str:
-        return managed_by.name if managed_by is not None else None
+        return managed_by.value if managed_by is not None else None
 
 
 class ManagedUserGroupPut(BaseModel):

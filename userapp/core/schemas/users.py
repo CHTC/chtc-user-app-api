@@ -33,7 +33,7 @@ class UserTableSchema(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str | None:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
 
 class UserGet(BaseModel):
@@ -56,7 +56,7 @@ class UserGet(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
     @computed_field
     @property
@@ -112,7 +112,7 @@ class UserPost(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
     @model_validator(mode="after")
     def check_active_requires_netid(self):
@@ -147,7 +147,7 @@ class UserPatch(BaseModel):
 
     @field_serializer('position')
     def serialize_position(self, position: PositionEnum) -> str:
-        return position.name if position is not None else None
+        return position.value if position is not None else None
 
 
 class UserPatchFull(UserPatch):

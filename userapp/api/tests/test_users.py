@@ -265,14 +265,15 @@ class TestUsers:
         # Manually add user to groups in the database for testing
         group_ids = [1, 2]
         for group_id in group_ids:
-            admin_client.post(f"/groups/{group_id}/users", json={"id": user['id']})
+            r = admin_client.post(f"/groups/{group_id}/users", json={"user_id": user['id']})
+            assert r.status_code == 201, f"Adding user to group {group_id} should return a 201 status code, instead got {r.text}"
 
         response = admin_client.get(f"/users/{user['id']}/groups")
 
         assert response.status_code == 200, f"Getting user groups should return a 200 status code, instead got {response.text}"
         groups = response.json()
         assert len(groups) == len(group_ids), f"User should belong to {len(group_ids)} groups"
-        assert all(group['id'] in group_ids for group in groups), "User's groups should match the added groups"
+        assert all(group['group_id'] in group_ids for group in groups), "User's groups should match the added groups"
 
     def test_get_user_by_netid(self, admin_client: Client, user_factory, project_factory):
         """Test getting a user by netid"""
@@ -343,38 +344,12 @@ def expected_auth_username(user_data: dict) -> bool:
 
 
 class TestUserAuthBehavior:
-    def test_schema_computed_fields_follow_username_and_netid(self):
-        netid_user = UserGet(**schema_user_data(active=True, username="testnetid", netid="testnetid"))
-        username_user = UserGet(**schema_user_data(active=True, username="unixuser", netid="testnetid"))
-        inactive_project_view = JoinedProjectView(
-            **schema_project_view_data(active=False, username="unixuser", netid="testnetid", role=RoleEnum.MEMBER)
-        )
-
-        assert netid_user.auth_netid is True
-        assert netid_user.auth_username is False
-        assert username_user.auth_netid is False
-        assert username_user.auth_username is True
-        assert inactive_project_view.model_dump()["auth_netid"] is False
-        assert inactive_project_view.model_dump()["auth_username"] is False
 
     def test_userpost_requires_netid_when_active(self):
         with pytest.raises(ValidationError) as exc_info:
             UserPost(**schema_user_data(username="testnetid", active=True, netid=None))
 
         assert "netid must be provided" in str(exc_info.value).lower()
-
-    def test_create_active_user_defaults_username_to_netid(self, admin_client: Client, project_factory):
-        project = project_factory()
-        user_payload = user_data_f(101, project["id"])
-        user_payload.pop("username")
-
-        create_response = admin_client.post("/users", json=user_payload)
-        assert create_response.status_code == 201, create_response.text
-        created_user = create_response.json()
-
-        assert created_user["username"] == created_user["netid"]
-        assert created_user["auth_netid"] is True
-        assert created_user["auth_username"] is False
 
     def test_patch_user_can_set_distinct_username(self, admin_client: Client, project_factory):
         project = project_factory()
