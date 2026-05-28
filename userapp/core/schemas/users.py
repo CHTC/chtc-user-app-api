@@ -30,6 +30,8 @@ class UserTableSchema(BaseModel):
     date: Optional[datetime] = Field(default=None)
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
+    created_at: Optional[datetime] = Field(default=None)
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 
@@ -50,6 +52,8 @@ class UserGet(BaseModel):
     date: Optional[datetime] = Field(default=None)
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
+    created_at: Optional[datetime] = Field(default=None)
+    updated_at: Optional[datetime] = Field(default=None)
 
 
     @computed_field
