@@ -35,6 +35,9 @@ class EntityManagerEnum(Enum):
     MANIFEST = "MANIFEST" # Manifest Groups
     MORGRIDGE_AD = "MORGRIDGE_ACTIVE_DIRECTORY"
 
+class GroupTypeEnum(Enum):
+    SUBMIT_NODE = "SUBMIT_NODE"
+
 # I decided against using this so I could set the values in just the UI
 # Keeping it here just incase
 class DepartmentEnum(Enum):

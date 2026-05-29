@@ -8,7 +8,7 @@ from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum, \
-    EntityManagerEnum
+    EntityManagerEnum, GroupTypeEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitNodesView
@@ -20,9 +20,11 @@ class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(VARCHAR(32), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
     point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     unix_gid = Column(Integer, unique=True)
     has_groupdir = Column(Boolean, nullable=False, default=True)
+    type = Column(SQLEnum(GroupTypeEnum, name='group_type_enum'), nullable=True)
 
     point_of_contact_user: Mapped[Optional["User"]] = relationship(
         "User",
