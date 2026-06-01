@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, relationship
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
+from userapp.core.models.enum import GroupTypeEnum, RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
 from userapp.core.models.main import Base
 
 
@@ -167,9 +167,11 @@ class UserGroupView(Base):
 
     # From Group
     name = Column(String(255))
+    description = Column(String(255))
     point_of_contact = Column(Integer)
     unix_gid = Column(Integer)
     has_groupdir = Column(Boolean)
+    type = Column(SQLEnum(GroupTypeEnum, name="group_type_enum"))
 
     point_of_contact_user: Mapped[Optional["User"]] = relationship(
         "User",

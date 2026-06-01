@@ -3,6 +3,7 @@ from typing import Optional, Annotated
 import re
 
 from userapp.core.schemas.general import BaseModel
+from userapp.core.models.enum import GroupTypeEnum
 
 
 def group_name_validator(name: str) -> str:
@@ -24,29 +25,36 @@ class GroupTableSchema(BaseModel):
     
     id: Optional[int] = Field(default=None)
     name: str
+    description: Optional[str] = Field(default=None)
     point_of_contact: Optional[int] = Field(default=None)
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: Optional[bool] = Field(default=None)
-
+    type: Optional[GroupTypeEnum] = Field(default=None)
 
 class GroupPost(BaseModel):
 
     name: Annotated[str, AfterValidator(group_name_validator)]
+    description: Optional[str] = Field(default=None)
     point_of_contact: Optional[int] = Field(default=None)
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: Optional[bool] = Field(default=None)
+    type: Optional[GroupTypeEnum] = Field(default=None)
 
 class GroupPatch(BaseModel):
 
     name: Annotated[Optional[str], AfterValidator(group_name_validator)] = Field(default=None)
+    description: Optional[str] = Field(default=None)
     point_of_contact: Optional[int] = Field(default=None)
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: Optional[bool] = Field(default=None)
+    type: Optional[GroupTypeEnum] = Field(default=None)
 
 class GroupGet(BaseModel):
 
     id: int
     name: str
+    description: Optional[str] = Field(default=None)
     point_of_contact: Optional["UserGet"] = Field(default=None, validation_alias='point_of_contact_user')
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: bool
+    type: Optional[GroupTypeEnum] = Field(default=None)
