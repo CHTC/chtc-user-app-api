@@ -17,7 +17,7 @@ from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewS
 from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
-    UserSubmitNodesView as UserSubmitNodesViewTable, UserSubmitNodesView, UserGroupView as UserGroupViewTable
+    UserSubmitNodesView as UserSubmitNodesViewTable, UserGroupView as UserGroupViewTable
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 from userapp.api.load_options import user_load_options
 from userapp.api.routes._util import _patch_user_submit_nodes, _patch_user_project, _patch_user_group

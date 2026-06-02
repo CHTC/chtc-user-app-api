@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum, EntityManagerEnum
+from userapp.core.models.enum import GroupTypeEnum, RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum, EntityManagerEnum
 
 
 class BaseModel(PydanticBaseModel):
@@ -144,6 +144,8 @@ class UserGroupView(BaseModel):
 
     # From the Group table
     name: str
+    description: Optional[str] = Field(default=None)
     point_of_contact: Optional["UserGet"] = Field(default=None, validation_alias='point_of_contact_user')
     unix_gid: Optional[int] = Field(default=None)
     has_groupdir: bool
+    type: Optional[GroupTypeEnum] = Field(default=None)
