@@ -1,36 +1,36 @@
 # Direct dependencies only - all others will be installed automatically as sub-dependencies
 # Core Framework
-fastapi==0.129.0
-uvicorn==0.41.0
-pydantic==2.12.3
-pydantic-settings==2.11.0
+fastapi==0.136.3
+uvicorn==0.48.0
+pydantic==2.13.4
+pydantic-settings==2.14.1
 multidict
 
 # Database
-SQLAlchemy==2.0.44
-asyncpg==0.30.0
-psycopg2-binary==2.9.11
-PyMySQL==1.1.2
-aiosqlite==0.21.0
-alembic==1.18.1
+SQLAlchemy==2.0.50
+asyncpg==0.31.0
+psycopg2-binary==2.9.12
+PyMySQL==1.2.0
+aiosqlite==0.22.1
+alembic==1.18.4
 
 # Security & Authentication
 python-jose==3.5.0
 passlib==1.7.4
-bcrypt==4.3.0
-PyJWT==2.10.1
+bcrypt==5.0.0
+PyJWT==2.13.0
 
 # HTTP Client
 httpx==0.28.1
 
 # Configuration
-python-dotenv==1.1.1
+python-dotenv==1.2.2
 
 # Email validation
 email-validator==2.3.0
 
 # Testing
-pytest==8.4.2
+pytest==9.0.3
 
 # Security Auditing (optional - can be in dev requirements)
 pip-audit==2.10.0
