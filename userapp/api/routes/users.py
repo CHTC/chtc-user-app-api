@@ -20,7 +20,7 @@ from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTabl
     UserSubmitNodesView as UserSubmitNodesViewTable, UserGroupView as UserGroupViewTable
 from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
 from userapp.api.load_options import user_load_options
-from userapp.api.routes._util import _patch_user_submit_nodes, _patch_user_project, _patch_user_group
+from userapp.api.routes._util import _patch_user_project, _patch_user_group
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
@@ -104,9 +104,10 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
         updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=user_load_options)
 
-        # Update Submit Nodes if patched
-        if user.submit_nodes is not None:
-            await _patch_user_submit_nodes(session, updated_user, user.submit_nodes)
+        # # Update Submit Nodes if patched
+        # if user.submit_nodes is not None:
+        #     await _patch_user_submit_nodes(session, updated_user, user.submit_nodes)
+        # Submit nodes deprecated TODO: remove this
 
         # Expire the instance to force a fresh load from the database
         session.expire(updated_user)

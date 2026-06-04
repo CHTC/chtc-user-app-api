@@ -3,40 +3,38 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from userapp.api.util import create_one_endpoint
+from userapp.core.models.enum import GroupTypeEnum
 from userapp.core.models.tables import UserSubmit, User, UserProject, UserGroup
 from userapp.core.models.views import JoinedProjectView, UserGroupView
 from userapp.core.schemas.user_project import UserProjectPatch
 from userapp.core.schemas.user_group import UserGroupPatch
 from userapp.core.schemas.user_submit import UserSubmitTableSchema, UserSubmitPost
+from userapp.core.schemas.user_group import UserGroupCreate  # see below
 
 
-async def _patch_user_submit_nodes(session: AsyncSession, user: User, new_submit_nodes: list[UserSubmitPost]):
+async def _patch_user_submit_node_groups(session: AsyncSession, user: User, new_submit_node_group_ids: list[int]):
     """Updates the passed in user to match the provided list of submit_nodes"""
 
-    # Delete the submit nodes that are not in the list of new submit nodes
-    for existing_submit_node in user.submit_nodes:
-        if existing_submit_node.submit_node_id not in [sn.submit_node_id for sn in new_submit_nodes]:
-            delete_stmt = (
-                UserSubmit.__table__.delete()
-                .where(UserSubmit.user_id == user.id)
-                .where(UserSubmit.submit_node_id == existing_submit_node.submit_node_id)
+    existing_group_ids = [g.group_id for g in user.groups]
+
+    # Remove memberships not in the new list
+    for existing_group in user.groups:
+        if existing_group.type == GroupTypeEnum.SUBMIT_NODE and existing_group.group_id not in new_submit_node_group_ids:
+            await session.execute(
+                UserGroup.__table__.delete()
+                .where(UserGroup.user_id == user.id)
+                .where(UserGroup.group_id == existing_group.group_id)
             )
-            await session.execute(delete_stmt)
 
-    # Add the missing submit nodes
-    for submit_node in new_submit_nodes:
-
-        if submit_node.submit_node_id in [sn.submit_node_id for sn in user.submit_nodes]:
-            continue  # Already exists
-
-        # Create nodes for both auth_netid True and False to simplify logic
-        for for_auth_netid in [True, False]:
-            user_submit_model = UserSubmitTableSchema(
-                user_id=user.id,
-                for_auth_netid=for_auth_netid,
-                **submit_node.model_dump(),
-            )
-            await create_one_endpoint(session, UserSubmit, user_submit_model)
+    # Add memberships that are missing
+    for group_id in new_submit_node_group_ids:
+        if group_id in existing_group_ids:
+            continue
+        await create_one_endpoint(
+            session,
+            UserGroup,
+            UserGroupCreate(user_id=user.id, group_id=group_id),
+        )
 
 
 async def _patch_user_project(

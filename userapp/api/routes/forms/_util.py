@@ -7,7 +7,7 @@ from userapp.core.models.enum import RoleEnum
 from userapp.core.models.tables import UserForm as UserFormTable, UserGroup, UserProject
 from userapp.core.schemas.user_application_form import UserFormPatch
 from userapp.core.schemas.user_project import UserProjectTableSchema
-from userapp.api.routes._util import _patch_user_submit_nodes
+from userapp.api.routes._util import _patch_user_submit_node_groups
 
 CHTC_NO_REPLY_EMAIL = "no-reply@chtc.wisc.edu"
 CHTC_TICKETING_EMAIL = "chtc@cs.wisc.edu"
@@ -80,10 +80,10 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
 
         user.position = form.user_position
 
-        if not (form.project_id and form.user_position and form.submit_nodes):
+        if not (form.project_id and form.user_position and form.submit_node_group_ids):
             raise HTTPException(
                 status_code=400,
-                detail="project_id, user_position, and submit_nodes must be provided to accept a user form",
+                detail="project_id, user_position, and submit_node_group_ids must be provided to accept a user form",
             )
 
         # Clear out projects, and groups
@@ -101,7 +101,7 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
             ),
         )
         # Update to the set of approved submit nodes
-        await _patch_user_submit_nodes(session, user, form.submit_nodes)
+        await _patch_user_submit_node_groups(session, user, form.submit_node_group_ids)
     
     # Try sending the user an email
     try:

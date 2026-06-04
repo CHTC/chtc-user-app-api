@@ -15,7 +15,7 @@ class UserFormPatch(BaseModel):
     email: Optional[EmailStr] = Field(default=None)
     project_id: Optional[int] = Field(default=None)
     user_position: Optional[PositionEnum] = Field(default=None)
-    submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=None)
+    submit_node_group_ids: Optional[list[int]] = Field(default=None)
 
 
 class UserFormTableSchema(BaseModel):

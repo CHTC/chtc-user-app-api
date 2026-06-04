@@ -106,7 +106,7 @@ def create_app() -> FastAPI:
     return app
 
 async def main():
-    config = uvicorn.Config("userapp.main:create_app", host="0.0.0.0", port=80, log_level="info", factory=True)
+    config = uvicorn.Config("userapp.main:create_app", host="0.0.0.0", port=8080, log_level="info", factory=True)
     server = uvicorn.Server(config)
     await server.serve()
 
