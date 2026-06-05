@@ -3,7 +3,6 @@ import random
 from typing import Optional
 
 from userapp.core.models.enum import RoleEnum, PositionEnum
-from userapp.core.schemas.user_submit import UserSubmitPost
 
 
 def project_data_f(
@@ -88,12 +87,12 @@ def user_form_data_f() -> dict:
     }
 
 
-def user_form_approval_data_f(project_id: int, submit_nodes: list[UserSubmitPost]) -> dict:
+def user_form_approval_data_f(project_id: int, submit_node_group_ids: list[int]) -> dict:
     return {
         "status": "APPROVED",
         "project_id": project_id,
         "user_position": PositionEnum.GRAD_STUDENT.value,
-        "submit_nodes": submit_nodes,
+        "submit_node_group_ids": submit_node_group_ids,
     }
 
 

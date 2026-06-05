@@ -11,13 +11,13 @@ from userapp.api.tests.fake_data import user_form_data_f, user_form_approval_dat
 from userapp.api.tests.conftest import _make_auth_client
 
 
-def create_submit_node(admin_client: Client) -> dict:
+def create_submit_node_group(admin_client: Client) -> dict:
     response = admin_client.post(
-        "/submit_nodes",
-        json={"name": f"form-submit-node-{random.randint(0, 10**6)}"},
+        "/groups",
+        json={"name": f"submit-node-group-{random.randint(0, 10**6)}", "type": "SUBMIT_NODE"},
     )
     assert response.status_code == 201, (
-        f"POST /submit_nodes should return 201, got {response.status_code}: {response.text}"
+        f"POST /groups should return 201, got {response.status_code}: {response.text}"
     )
     return response.json()
 
@@ -274,10 +274,10 @@ class TestUserFormPatch:
         )
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
+        submit_node_group = create_submit_node_group(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
+            json=user_form_approval_data_f(project["id"], [submit_node_group["id"]]),
         )
 
         assert update_response.status_code == 200, (
@@ -320,10 +320,10 @@ class TestUserFormPatch:
         form_id = create_response.json()["id"]
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
+        submit_node_group = create_submit_node_group(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
+            json=user_form_approval_data_f(project["id"], [submit_node_group["id"]]),
         )
 
         assert update_response.status_code == 200, (
@@ -362,11 +362,11 @@ class TestPreserveExistingData:
         form_id = create_response.json()["id"]
 
         original_project = project_factory()
-        original_submit_node = create_submit_node(admin_client)
+        original_submit_node_group = create_submit_node_group(admin_client)
 
         first_approval = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json={**user_form_approval_data_f(original_project["id"], [{"submit_node_id": original_submit_node["id"]}]), "status": "APPROVED"},
+            json={**user_form_approval_data_f(original_project["id"], [original_submit_node_group["id"]]), "status": "APPROVED"},
         )
         assert first_approval.status_code == 200
 
@@ -376,15 +376,15 @@ class TestPreserveExistingData:
         user_post_approval = user_post_approval_response.json()
 
         assert user_post_approval["active"]
-        assert len(user_post_approval["groups"]) == 0, "User should not have any groups post approval when preserve_existing_data is False"
+        assert len(user_post_approval["groups"]) == 1, "User should have exactly 1 group (the approved submit node group) post approval when preserve_existing_data is False"
+        assert user_post_approval["groups"][0]["name"] == original_submit_node_group["name"], "User's group should be the approved submit node group post approval when preserve_existing_data is False"
         assert len(user_post_approval["projects"]) == 1, "User should have exactly 1 project post approval when preserve_existing_data is False"
         assert user_post_approval["projects"][0]["project_id"] == original_project["id"], "User's project should be the approved project post approval when preserve_existing_data is False"
-        assert len(user_post_approval["submit_nodes"]) == 1, "User should have exactly 1 submit node post approval when preserve_existing_data is False"
-        assert user_post_approval["submit_nodes"][0]["submit_node_name"] == original_submit_node["name"], "User's submit node should be the approved submit node post approval when preserve_existing_data is False"
+        assert len(user_post_approval["submit_nodes"]) == len(user["submit_nodes"]), "User's submit nodes should be untouched by approval"
 
-        # Check the new projects didn't collide with the old somehow
+        # Check the new projects/groups didn't collide with the old somehow
         assert user_post_approval["projects"][0]["project_id"] != user["projects"][0]["project_id"]
-        assert user_post_approval["submit_nodes"][0]["submit_node_name"] != user["submit_nodes"][0]["submit_node_name"]
+        assert user_post_approval["groups"][0]["name"] != user["groups"][0]["name"]
 
     def test_approve_with_preserve_keeps_existing_data(
             self,
@@ -405,11 +405,11 @@ class TestPreserveExistingData:
         form_id = create_response.json()["id"]
 
         original_project = project_factory()
-        original_submit_node = create_submit_node(admin_client)
+        original_submit_node_group = create_submit_node_group(admin_client)
 
         first_approval = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json={**user_form_approval_data_f(original_project["id"], [{"submit_node_id": original_submit_node["id"]}]),
+            json={**user_form_approval_data_f(original_project["id"], [original_submit_node_group["id"]]),
                   "status": "APPROVED", "preserve_existing_data": True},
         )
         assert first_approval.status_code == 200
@@ -428,7 +428,7 @@ class TestPreserveExistingData:
 
         # Check the new projects didn't collide with the old somehow
         assert user_post_approval["projects"][0]["project_id"] != original_project["id"]
-        assert user_post_approval["submit_nodes"][0]["submit_node_name"] != original_submit_node["name"]
+        assert user_post_approval["submit_nodes"][0]["submit_node_name"] != original_submit_node_group["name"]
 
 
 class TestUserFormTriggers:
@@ -444,10 +444,10 @@ class TestUserFormTriggers:
         form_id = create_response.json()["id"]
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
+        submit_node_group = create_submit_node_group(admin_client)
         approve_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
+            json=user_form_approval_data_f(project["id"], [submit_node_group["id"]]),
         )
         assert approve_response.status_code == 200
 
@@ -476,10 +476,10 @@ class TestUserFormTriggers:
         )
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
+        submit_node_group = create_submit_node_group(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
+            json=user_form_approval_data_f(project["id"], [submit_node_group["id"]]),
         )
 
         assert update_response.status_code == 200
@@ -508,10 +508,10 @@ class TestUserFormTriggers:
         assert deactivate_response.status_code == 200
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
+        submit_node_group = create_submit_node_group(admin_client)
         update_response = admin_client.patch(
             f"/forms/user-applications/{form_id}",
-            json=user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}]),
+            json=user_form_approval_data_f(project["id"], [submit_node_group["id"]]),
         )
 
         assert update_response.status_code == 200, (
@@ -524,7 +524,7 @@ class TestUserFormTriggers:
 
         assert updated_user["active"] is True
         assert any(project_membership["project_id"] == project["id"] for project_membership in updated_user["projects"])
-        assert any(user_submit["submit_node_name"] == submit_node["name"] for user_submit in updated_user["submit_nodes"])
+        assert any(group["name"] == submit_node_group["name"] for group in updated_user["groups"])
 
 
 @pytest.fixture
@@ -621,8 +621,8 @@ class TestEmailOnForm:
         form_id = create_response.json()["id"]
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
-        approval_data = user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}])
+        submit_node_group = create_submit_node_group(admin_client)
+        approval_data = user_form_approval_data_f(project["id"], [submit_node_group["id"]])
         approval_data["email"] = "new_email@example.com"
 
         update_response = admin_client.patch(f"/forms/user-applications/{form_id}", json=approval_data)
@@ -665,9 +665,9 @@ class TestEmailOnForm:
         form_id = create_response.json()["id"]
 
         project = project_factory()
-        submit_node = create_submit_node(admin_client)
+        submit_node_group = create_submit_node_group(admin_client)
         # Do NOT include email in the approval patch
-        approval_data = user_form_approval_data_f(project["id"], [{"submit_node_id": submit_node["id"]}])
+        approval_data = user_form_approval_data_f(project["id"], [submit_node_group["id"]])
 
         update_response = admin_client.patch(f"/forms/user-applications/{form_id}", json=approval_data)
 
