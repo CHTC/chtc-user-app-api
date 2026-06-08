@@ -53,11 +53,12 @@ def user_data_f(index: int, primary_project_id, is_admin=False, username: Option
         "position": PositionEnum.GRAD_STUDENT.name,
         "primary_project_id": primary_project_id,
         "primary_project_role": RoleEnum.MEMBER.name,
-        "submit_nodes": [
-            {
-                "submit_node_id": 1
-            }
-        ]
+        # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+        # "submit_nodes": [
+        #     {
+        #         "submit_node_id": 1
+        #     }
+        # ]
     }
 
 def user_form_data_f() -> dict:

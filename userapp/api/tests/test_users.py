@@ -42,7 +42,8 @@ class TestUsers:
             if key not in ["id", "is_pi", "submit_nodes", "date", "created_at", "updated_at", "notes", "projects", "groups", "auth_netid", "auth_username", "username", "user_forms"]:
                 assert created_user[key] == user_payload[key], f"User {key} should match the payload"
 
-        assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
+        # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+        # assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
 
     def test_get_user(self, admin_client: Client, user_factory, project_factory):
         """Test getting a user by ID"""
@@ -71,6 +72,12 @@ class TestUsers:
             "phone1": "555-9999",
             "phone2": "",
             "position": "POSTDOC",
+            # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+            # "submit_nodes": [
+            #     {
+            #         "submit_node_id": 2 # Default is 1
+            #     }
+            # ]
         }
 
         user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
@@ -82,6 +89,81 @@ class TestUsers:
         assert updated_data['phone1'] == update_payload['phone1'], "Phone 1 should be updated"
         assert updated_data['phone2'] == None, "Phone 2 should be updated"
         assert updated_data['position'] == update_payload['position'], "Position should be updated"
+        # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+        # assert updated_data['submit_nodes'][0]['submit_node_id'] == 2, "User submit node should be updated"
+
+    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+    @pytest.mark.skip(reason="TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups")
+    def test_update_users_submit_nodes(self, admin_client: Client, user_factory, project_factory):
+        """Test updating user's submit nodes"""
+
+        project = project_factory()
+        user = user_factory(10, project['id'])
+
+        update_payload = {
+            "submit_nodes": [
+                {
+                    "submit_node_id": 1
+                },
+                {
+                    "submit_node_id": 2
+                }
+            ]
+        }
+
+        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
+        expected_submit_node_ids = set([1, 2])
+        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
+
+    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+    @pytest.mark.skip(reason="TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups")
+    def test_update_users_submit_nodes_twice(self, admin_client: Client, user_factory, project_factory):
+        """Test updating user's submit nodes"""
+
+        project = project_factory()
+        user = user_factory(10, project['id'])
+
+        update_payload = {
+            "submit_nodes": [
+                {
+                    "submit_node_id": 1
+                },
+                {
+                    "submit_node_id": 2
+                }
+            ]
+        }
+
+        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
+        expected_submit_node_ids = set([1, 2])
+        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
+
+        update_payload = {
+            "submit_nodes": [
+                {
+                    "submit_node_id": 2
+                }
+            ]
+        }
+
+        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
+
+        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
+
+        updated_data = user_payload.json()
+        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
+        expected_submit_node_ids = set([2])
+        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
 
     def test_nullify_email1(self, admin_client: Client, user_factory, project_factory):
 
@@ -159,6 +241,8 @@ class TestUsers:
         assert len(projects) > 0, "User should have at least one project"
         assert any(proj['project_id'] == filled_out_project['id'] for proj in projects), "User's projects should include the filled out project"
 
+    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups; GET /users/{id}/submit_nodes is gone.
+    @pytest.mark.skip(reason="TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups")
     def test_get_user_submit_nodes(self, admin_client: Client, user_factory, filled_out_project: dict):
         """Test getting submit nodes for a user"""
         user = user_factory(random.randint(2001, 3000), filled_out_project['id'])
@@ -213,6 +297,8 @@ class TestUsers:
         assert fetched_user['id'] == user['id'], "Fetched user ID should match the created user ID"
         assert fetched_user['name'] == user['name'], "Fetched user name should match the created user name"
 
+    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups; users no longer have submit nodes.
+    @pytest.mark.skip(reason="TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups")
     def test_patch_user_doesnt_remove_submit_nodes(self, admin_client: Client, user, project):
         """Test that patching a user without submit nodes does not remove existing submit nodes"""
 

@@ -3,6 +3,9 @@ import random
 
 from httpx import Client
 
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups; the /submit_nodes endpoints are gone.
+pytestmark = pytest.mark.skip(reason="TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups")
+
 
 class TestSubmitNodesSecurity:
 
