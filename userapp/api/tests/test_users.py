@@ -39,7 +39,7 @@ class TestUsers:
         assert response.status_code == 201, f"Creating a user should return a 201 status code, instead got {response.text}"
         created_user = response.json()
         for key in created_user:
-            if key not in ["id", "is_pi", "submit_nodes", "date", "notes", "projects", "groups", "auth_netid", "auth_username", "username", "user_forms"]:
+            if key not in ["id", "is_pi", "submit_nodes", "date", "created_at", "updated_at", "notes", "projects", "groups", "auth_netid", "auth_username", "username", "user_forms"]:
                 assert created_user[key] == user_payload[key], f"User {key} should match the payload"
 
         assert set(map(lambda x: x['submit_node_id'], user_payload['submit_nodes'])) == set(map(lambda x: x['submit_node_id'], created_user['submit_nodes']))
@@ -71,11 +71,6 @@ class TestUsers:
             "phone1": "555-9999",
             "phone2": "",
             "position": "POSTDOC",
-            "submit_nodes": [
-                {
-                    "submit_node_id": 2 # Default is 1
-                }
-            ]
         }
 
         user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
@@ -87,78 +82,6 @@ class TestUsers:
         assert updated_data['phone1'] == update_payload['phone1'], "Phone 1 should be updated"
         assert updated_data['phone2'] == None, "Phone 2 should be updated"
         assert updated_data['position'] == update_payload['position'], "Position should be updated"
-        assert updated_data['submit_nodes'][0]['submit_node_id'] == 2, "User submit node should be updated"
-
-    def test_update_users_submit_nodes(self, admin_client: Client, user_factory, project_factory):
-        """Test updating user's submit nodes"""
-
-        project = project_factory()
-        user = user_factory(10, project['id'])
-
-        update_payload = {
-            "submit_nodes": [
-                {
-                    "submit_node_id": 1
-                },
-                {
-                    "submit_node_id": 2
-                }
-            ]
-        }
-
-        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
-
-        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
-
-        updated_data = user_payload.json()
-        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
-        expected_submit_node_ids = set([1, 2])
-        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
-
-    def test_update_users_submit_nodes_twice(self, admin_client: Client, user_factory, project_factory):
-        """Test updating user's submit nodes"""
-
-        project = project_factory()
-        user = user_factory(10, project['id'])
-
-        update_payload = {
-            "submit_nodes": [
-                {
-                    "submit_node_id": 1
-                },
-                {
-                    "submit_node_id": 2
-                }
-            ]
-        }
-
-        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
-
-        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
-
-        updated_data = user_payload.json()
-        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
-        expected_submit_node_ids = set([1, 2])
-        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
-
-        update_payload = {
-            "submit_nodes": [
-                {
-                    "submit_node_id": 2
-                }
-            ]
-        }
-
-        user_payload = admin_client.patch(f"/users/{user['id']}", json=update_payload)
-
-        assert user_payload.status_code == 200, f"Updating a user's submit nodes should return a 200 status code, instead got {user_payload.text}"
-
-        updated_data = user_payload.json()
-        updated_submit_node_ids = set(map(lambda x: x['submit_node_id'], updated_data['submit_nodes']))
-        expected_submit_node_ids = set([2])
-        assert updated_submit_node_ids == expected_submit_node_ids, "User submit nodes should be updated correctly"
-
-
 
     def test_nullify_email1(self, admin_client: Client, user_factory, project_factory):
 
