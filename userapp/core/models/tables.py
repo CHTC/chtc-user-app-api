@@ -11,7 +11,8 @@ from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, Pos
     EntityManagerEnum, GroupTypeEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
-from userapp.core.models.views import UserSubmitNodesView
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+# from userapp.core.models.views import UserSubmitNodesView
 from userapp.core.models.views import UserApplicationView
 from userapp.core.models.views import UserGroupView
 
@@ -84,10 +85,11 @@ class Project(Base):
     )
 
 
-class SubmitNode(Base):
-    __tablename__ = 'submit_nodes'
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(60))
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups (DB table dropped in a later migration)
+# class SubmitNode(Base):
+#     __tablename__ = 'submit_nodes'
+#     id = Column(Integer, primary_key=True, index=True)
+#     name = Column(String(60))
 
 
 class User(Base):
@@ -125,12 +127,13 @@ class User(Base):
         back_populates="users"
     )
 
-    submit_nodes: Mapped[List[UserSubmitNodesView]] = relationship(
-        "UserSubmitNodesView",
-        primaryjoin="User.id==foreign(UserSubmitNodesView.user_id)",
-        lazy="selectin",
-        viewonly=True,
-    )
+    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+    # submit_nodes: Mapped[List[UserSubmitNodesView]] = relationship(
+    #     "UserSubmitNodesView",
+    #     primaryjoin="User.id==foreign(UserSubmitNodesView.user_id)",
+    #     lazy="selectin",
+    #     viewonly=True,
+    # )
 
     projects: Mapped[List["JoinedProjectView"]] = relationship(
         "JoinedProjectView",
@@ -200,23 +203,25 @@ class UserProject(Base):
     )
 
 
-class UserSubmit(Base):
-    __tablename__ = 'user_submits'
-    __table_args__ = (
-        UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),
-        Index('idx_user_submits_userid_submitnodeid_incl', 'user_id', 'submit_node_id',
-              postgresql_include=['disk_quota', 'hpc_diskquota', 'hpc_inodequota', 'hpc_joblimit', 'hpc_corelimit', 'hpc_fairshare']),
-    )
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False, index=True)
-    for_auth_netid = Column(Boolean)
-    disk_quota = Column(Integer)
-    hpc_diskquota = Column(Integer, nullable=False, default=100)
-    hpc_inodequota = Column(Integer, nullable=False, default=50000)
-    hpc_joblimit = Column(Integer, nullable=False, default=10)
-    hpc_corelimit = Column(Integer, nullable=False, default=720)
-    hpc_fairshare = Column(Integer, nullable=False, default=100)
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups (DB table dropped in a later migration).
+# NOTE: per-user quota/limit fields (disk_quota, hpc_*) and for_auth_netid have no group equivalent yet.
+# class UserSubmit(Base):
+#     __tablename__ = 'user_submits'
+#     __table_args__ = (
+#         UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),
+#         Index('idx_user_submits_userid_submitnodeid_incl', 'user_id', 'submit_node_id',
+#               postgresql_include=['disk_quota', 'hpc_diskquota', 'hpc_inodequota', 'hpc_joblimit', 'hpc_corelimit', 'hpc_fairshare']),
+#     )
+#     id = Column(Integer, primary_key=True, index=True)
+#     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+#     submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False, index=True)
+#     for_auth_netid = Column(Boolean)
+#     disk_quota = Column(Integer)
+#     hpc_diskquota = Column(Integer, nullable=False, default=100)
+#     hpc_inodequota = Column(Integer, nullable=False, default=50000)
+#     hpc_joblimit = Column(Integer, nullable=False, default=10)
+#     hpc_corelimit = Column(Integer, nullable=False, default=720)
+#     hpc_fairshare = Column(Integer, nullable=False, default=100)
 
 class Token(Base):
     __tablename__ = 'tokens'

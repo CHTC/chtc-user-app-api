@@ -5,7 +5,7 @@ from pydantic import Field, model_validator, EmailStr
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum, RoleEnum
 from userapp.core.schemas.general import BaseModel
-from userapp.core.schemas.users import UserGet, UserSubmitPost
+from userapp.core.schemas.users import UserGet  # TODO: Remove this — removed UserSubmitPost (submit nodes replaced by SUBMIT_NODE groups)
 
 
 class UserFormPatch(BaseModel):

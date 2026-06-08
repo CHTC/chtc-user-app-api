@@ -1,3 +1,5 @@
+# TODO: Remove this — entire module is dead; submit nodes replaced by SUBMIT_NODE groups.
+# No longer registered in userapp/api/routes/__init__.py, so this is never imported/loaded.
 from fastapi import APIRouter, Response, Depends
 
 from userapp.query_parser import get_filter_query_params

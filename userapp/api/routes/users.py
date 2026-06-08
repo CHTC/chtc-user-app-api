@@ -14,11 +14,12 @@ from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFul
 from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema, UserProjectPatch
 from userapp.core.schemas.user_group import UserGroupPatch
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupView as UserGroupViewSchema
-from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+# from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
-    UserSubmitNodesView as UserSubmitNodesViewTable, UserGroupView as UserGroupViewTable
-from userapp.core.models.tables import User as UserTable, UserProject, UserSubmit, Group, UserGroup, Note as NoteTable
+    UserGroupView as UserGroupViewTable  # TODO: Remove this — removed UserSubmitNodesView (submit nodes replaced by SUBMIT_NODE groups)
+from userapp.core.models.tables import User as UserTable, UserProject, Group, UserGroup, Note as NoteTable  # TODO: Remove this — removed UserSubmit (submit nodes replaced by SUBMIT_NODE groups)
 from userapp.api.load_options import user_load_options
 from userapp.api.routes._util import _patch_user_project, _patch_user_group
 
@@ -67,18 +68,19 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
     user_project_schema = UserProjectTableSchema(project_id=user.primary_project_id, role=user.primary_project_role, is_primary=True, user_id=created_user.id)
     await create_one_endpoint(session, UserProject, user_project_schema)
 
-    # Create the submit node associations
-    for submit_node in user.submit_nodes:
-
-        # Create nodes for both auth_netid True and False to simplify logic
-        for for_auth_netid in [True, False]:
-
-            user_submit_model = UserSubmitTableSchema(
-                user_id=created_user.id,
-                for_auth_netid=for_auth_netid,
-                **submit_node.model_dump(),
-            )
-            await create_one_endpoint(session, UserSubmit, user_submit_model)
+    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+    # # Create the submit node associations
+    # for submit_node in user.submit_nodes:
+    #
+    #     # Create nodes for both auth_netid True and False to simplify logic
+    #     for for_auth_netid in [True, False]:
+    #
+    #         user_submit_model = UserSubmitTableSchema(
+    #             user_id=created_user.id,
+    #             for_auth_netid=for_auth_netid,
+    #             **submit_node.model_dump(),
+    #         )
+    #         await create_one_endpoint(session, UserSubmit, user_submit_model)
 
     await session.flush()
 
@@ -126,12 +128,14 @@ async def get_user_projects(user_id: int, response: Response, page: int = 0, pag
     return await list_endpoint(session, JoinedProjectViewTable, response, filter_query_params, page, page_size)
 
 
-@router.get("/{user_id}/submit_nodes")
-async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserSubmitGet]:
-    """Get submit nodes associated with a user"""
-
-    select_stmt = select(UserSubmitNodesViewTable).where(UserSubmitNodesViewTable.user_id == user_id)
-    return await list_select_stmt(session, select_stmt, UserSubmitNodesViewTable, response, filter_query_params, page, page_size)
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups.
+# To get a user's submit nodes, fetch GET /users/{id}/groups and filter for type == SUBMIT_NODE.
+# @router.get("/{user_id}/submit_nodes")
+# async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserSubmitGet]:
+#     """Get submit nodes associated with a user"""
+#
+#     select_stmt = select(UserSubmitNodesViewTable).where(UserSubmitNodesViewTable.user_id == user_id)
+#     return await list_select_stmt(session, select_stmt, UserSubmitNodesViewTable, response, filter_query_params, page, page_size)
 
 
 @router.get("/{user_id}/groups")

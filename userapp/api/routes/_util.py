@@ -4,11 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from userapp.api.util import create_one_endpoint
 from userapp.core.models.enum import GroupTypeEnum
-from userapp.core.models.tables import UserSubmit, User, UserProject, UserGroup
+from userapp.core.models.tables import User, UserProject, UserGroup  # TODO: Remove this — removed UserSubmit (submit nodes replaced by SUBMIT_NODE groups)
 from userapp.core.models.views import JoinedProjectView, UserGroupView
 from userapp.core.schemas.user_project import UserProjectPatch
 from userapp.core.schemas.user_group import UserGroupPatch
-from userapp.core.schemas.user_submit import UserSubmitTableSchema, UserSubmitPost
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
+# from userapp.core.schemas.user_submit import UserSubmitTableSchema, UserSubmitPost
 from userapp.core.schemas.user_group import UserGroupCreate  # see below
 
 

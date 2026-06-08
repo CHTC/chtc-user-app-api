@@ -1,3 +1,5 @@
+# TODO: Remove this — entire module is dead; submit nodes replaced by SUBMIT_NODE groups.
+# All importers have been commented out, so this is never imported/loaded.
 from typing import Optional
 
 from pydantic import ConfigDict, Field

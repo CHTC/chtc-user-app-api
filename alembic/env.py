@@ -27,10 +27,12 @@ if config.config_file_name is not None:
 # Import your Base and all models to ensure they're registered
 from userapp.core.models.main import Base
 from userapp.core.models.tables import (
-    Group, Note, Project, SubmitNode, User, UserGroup,
-    UserNote, UserProject, UserSubmit, Token, Access
+    # TODO: Remove this — removed SubmitNode, UserSubmit (submit nodes replaced by SUBMIT_NODE groups)
+    Group, Note, Project, User, UserGroup,
+    UserNote, UserProject, Token, Access
 )
-from userapp.core.models.views import JoinedProjectView, UserSubmitNodesView  # Import views if needed
+# TODO: Remove this — removed UserSubmitNodesView (submit nodes replaced by SUBMIT_NODE groups)
+from userapp.core.models.views import JoinedProjectView  # Import views if needed
 
 target_metadata = Base.metadata
 

@@ -1,3 +1,5 @@
+# TODO: Remove this — entire module is dead; submit nodes replaced by SUBMIT_NODE groups.
+# Only consumed by the now-disabled submit_nodes route, so this is never imported/loaded.
 from typing import Optional
 
 from pydantic import Field

@@ -69,18 +69,19 @@ class JoinedProjectView(Base):
     last_note_ticket = Column(String(9))
 
 
-class UserSubmitNodesView(Base):
-    __tablename__ = 'user_submit_nodes'
-    __table_args__ = {'info': dict(is_view=True)}
-    user_id = Column(Integer, primary_key=True)
-    submit_node_id = Column(Integer, primary_key=True)
-    submit_node_name = Column(String(60))
-    disk_quota = Column(Integer)
-    hpc_diskquota = Column(Integer)
-    hpc_inodequota = Column(Integer)
-    hpc_joblimit = Column(Integer)
-    hpc_corelimit = Column(Integer)
-    hpc_fairshare = Column(Integer)
+# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups (DB view dropped in a later migration)
+# class UserSubmitNodesView(Base):
+#     __tablename__ = 'user_submit_nodes'
+#     __table_args__ = {'info': dict(is_view=True)}
+#     user_id = Column(Integer, primary_key=True)
+#     submit_node_id = Column(Integer, primary_key=True)
+#     submit_node_name = Column(String(60))
+#     disk_quota = Column(Integer)
+#     hpc_diskquota = Column(Integer)
+#     hpc_inodequota = Column(Integer)
+#     hpc_joblimit = Column(Integer)
+#     hpc_corelimit = Column(Integer)
+#     hpc_fairshare = Column(Integer)
 
 
 class UserApplicationView(Base):
