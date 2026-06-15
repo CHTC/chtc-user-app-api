@@ -14,8 +14,6 @@ from userapp.main import create_app
 from userapp.api.routes.security import create_login_token
 from userapp.api.tests.fake_data import project_data_f, user_data_f
 
-os.environ["DB_URL"] = os.environ.get("TEST_DB_URL", "sqllite+aiosqlite:///./test.db")
-
 VALID_CIDR_RANGE = '128.104.55.0/24'
 INVALID_CIDR_RANGE = '127.0.0.0/24'
 WHITE_IP = VALID_CIDR_RANGE.split('/')[0]
