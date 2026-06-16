@@ -14,12 +14,10 @@ from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFul
 from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema, UserProjectPatch
 from userapp.core.schemas.user_group import UserGroupPatch
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupView as UserGroupViewSchema
-# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-# from userapp.core.schemas.user_submit import UserSubmitPost, UserSubmitTableSchema, UserSubmitGet
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
-    UserGroupView as UserGroupViewTable  # TODO: Remove this — removed UserSubmitNodesView (submit nodes replaced by SUBMIT_NODE groups)
-from userapp.core.models.tables import User as UserTable, UserProject, Group, UserGroup, Note as NoteTable  # TODO: Remove this — removed UserSubmit (submit nodes replaced by SUBMIT_NODE groups)
+    UserGroupView as UserGroupViewTable
+from userapp.core.models.tables import User as UserTable, UserProject, Group, UserGroup, Note as NoteTable
 from userapp.api.load_options import user_load_options
 from userapp.api.routes._util import _patch_user_project, _patch_user_group
 
@@ -68,20 +66,6 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
     user_project_schema = UserProjectTableSchema(project_id=user.primary_project_id, role=user.primary_project_role, is_primary=True, user_id=created_user.id)
     await create_one_endpoint(session, UserProject, user_project_schema)
 
-    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-    # # Create the submit node associations
-    # for submit_node in user.submit_nodes:
-    #
-    #     # Create nodes for both auth_netid True and False to simplify logic
-    #     for for_auth_netid in [True, False]:
-    #
-    #         user_submit_model = UserSubmitTableSchema(
-    #             user_id=created_user.id,
-    #             for_auth_netid=for_auth_netid,
-    #             **submit_node.model_dump(),
-    #         )
-    #         await create_one_endpoint(session, UserSubmit, user_submit_model)
-
     await session.flush()
 
     # Expire the user to force a fresh load from the database
@@ -106,11 +90,6 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
         updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=user_load_options)
 
-        # # Update Submit Nodes if patched
-        # if user.submit_nodes is not None:
-        #     await _patch_user_submit_nodes(session, updated_user, user.submit_nodes)
-        # Submit nodes deprecated TODO: remove this
-
         # Expire the instance to force a fresh load from the database
         session.expire(updated_user)
         updated_user = await get_one_endpoint(session, UserTable, user_id, load_options=user_load_options)
@@ -126,16 +105,6 @@ async def get_user_projects(user_id: int, response: Response, page: int = 0, pag
 
     filter_query_params.append(('id', f"eq.{user_id}"))
     return await list_endpoint(session, JoinedProjectViewTable, response, filter_query_params, page, page_size)
-
-
-# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups.
-# To get a user's submit nodes, fetch GET /users/{id}/groups and filter for type == SUBMIT_NODE.
-# @router.get("/{user_id}/submit_nodes")
-# async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserSubmitGet]:
-#     """Get submit nodes associated with a user"""
-#
-#     select_stmt = select(UserSubmitNodesViewTable).where(UserSubmitNodesViewTable.user_id == user_id)
-#     return await list_select_stmt(session, select_stmt, UserSubmitNodesViewTable, response, filter_query_params, page, page_size)
 
 
 @router.get("/{user_id}/groups")

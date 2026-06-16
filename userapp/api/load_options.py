@@ -9,6 +9,4 @@ user_load_options = [
     selectinload(UserTable.projects).selectinload(JoinedProjectViewTable.staff1_user),
     selectinload(UserTable.projects).selectinload(JoinedProjectViewTable.staff2_user),
     selectinload(UserTable.user_forms),
-    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-    # selectinload(UserTable.submit_nodes)
 ]

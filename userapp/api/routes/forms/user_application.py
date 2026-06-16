@@ -8,14 +8,12 @@ from userapp.api.routes.security import check_is_admin, check_is_authenticated, 
 from userapp.api.util import create_one_endpoint, list_endpoint, list_select_stmt, update_one_endpoint, get_one_endpoint
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
 from userapp.core.models.tables import BaseForm as BaseFormTable, Project as ProjectTable, \
-    User as UserTable, UserForm as UserFormTable, UserProject  # TODO: Remove this — removed SubmitNode/UserSubmit (submit nodes replaced by SUBMIT_NODE groups)
+    User as UserTable, UserForm as UserFormTable, UserProject
 from userapp.core.models.views import UserApplicationView as UserApplicationViewTable
 from userapp.core.schemas.general import UserApplicationViewFull as UserApplicationViewFullSchema
 from userapp.core.schemas.forms import BaseFormTableSchema
 from userapp.core.schemas.user_application_form import UserFormPost, UserFormPatch, UserFormTableSchema
 from userapp.core.schemas.user_project import UserProjectTableSchema
-# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-# from userapp.core.schemas.user_submit import UserSubmitTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params

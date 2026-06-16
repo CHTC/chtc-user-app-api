@@ -5,8 +5,6 @@ import re
 
 from userapp.core.schemas.general import JoinedProjectView, UserApplicationView as UserApplicationViewSchema, UserGroupView
 from userapp.core.schemas.note import NoteGet
-# TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-# from userapp.core.schemas.user_submit import UserSubmitGet, UserSubmitPost
 from userapp.core.schemas.general import BaseModel
 from userapp.core.schemas.groups import GroupGet
 from userapp.core.models.enum import RoleEnum, PositionEnum
@@ -87,8 +85,6 @@ class UserGet(BaseModel):
 class UserGetFull(UserGet):
 
     notes: list["NoteGet"] = Field(default=[])
-    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-    # submit_nodes: list["UserSubmitGet"] = Field(default=[])
     projects: list["JoinedProjectView"] = Field(default=[])
     groups: list["UserGroupView"] = Field(default=[])
     user_forms: list["UserApplicationViewSchema"] = Field(default=[])
@@ -121,8 +117,6 @@ class UserPostFull(UserPost):
 
     primary_project_id: int
     primary_project_role: RoleEnum
-    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-    # submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=[])
 
 
 class UserPatch(BaseModel):
@@ -146,8 +140,6 @@ class UserPatch(BaseModel):
 
 class UserPatchFull(UserPatch):
 
-    # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-    # submit_nodes: Optional[list[UserSubmitPost]] = Field(default=None)
     pass
 
 class RestrictedUserPatch(BaseModel):

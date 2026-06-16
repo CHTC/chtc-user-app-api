@@ -380,8 +380,6 @@ class TestPreserveExistingData:
         assert user_post_approval["groups"][0]["name"] == original_submit_node_group["name"], "User's group should be the approved submit node group post approval when preserve_existing_data is False"
         assert len(user_post_approval["projects"]) == 1, "User should have exactly 1 project post approval when preserve_existing_data is False"
         assert user_post_approval["projects"][0]["project_id"] == original_project["id"], "User's project should be the approved project post approval when preserve_existing_data is False"
-        # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-        # assert len(user_post_approval["submit_nodes"]) == len(user["submit_nodes"]), "User's submit nodes should be untouched by approval"
 
         # Check the new projects/groups didn't collide with the old somehow
         assert user_post_approval["projects"][0]["project_id"] != user["projects"][0]["project_id"]
@@ -424,14 +422,9 @@ class TestPreserveExistingData:
         assert len(user_post_approval["groups"]) == len(user["groups"]), "User should have groups post approval when preserve_existing_data is True"
         assert len(user_post_approval["projects"]) == len(user['projects'])
         assert user_post_approval["projects"][0]["project_id"] == user["projects"][0]["project_id"]
-        # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-        # assert len(user_post_approval["submit_nodes"]) == len(user['submit_nodes'])
-        # assert user_post_approval["submit_nodes"][0]["submit_node_name"] == user["submit_nodes"][0]["submit_node_name"]
 
         # Check the new projects didn't collide with the old somehow
         assert user_post_approval["projects"][0]["project_id"] != original_project["id"]
-        # TODO: Remove this — submit nodes replaced by SUBMIT_NODE groups
-        # assert user_post_approval["submit_nodes"][0]["submit_node_name"] != original_submit_node_group["name"]
 
 
 class TestUserFormTriggers:
