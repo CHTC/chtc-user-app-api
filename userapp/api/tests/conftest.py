@@ -1,4 +1,5 @@
 from typing import Any, Generator, Callable
+import asyncio
 import pytest
 import os
 import random
@@ -13,11 +14,23 @@ load_dotenv()
 from userapp.main import create_app
 from userapp.api.routes.security import create_login_token
 from userapp.api.tests.fake_data import project_data_f, user_data_f
+from userapp.api.tests.seed import seed_baseline
 
 VALID_CIDR_RANGE = '128.104.55.0/24'
 INVALID_CIDR_RANGE = '127.0.0.0/24'
 WHITE_IP = VALID_CIDR_RANGE.split('/')[0]
 BLACK_IP = INVALID_CIDR_RANGE.split('/')[0]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _baseline_seed():
+    """Insert the baseline fixture data once per session, before any test runs.
+
+    Assumes the schema already exists (the runner does `alembic upgrade head`
+    before invoking pytest). Idempotent, so re-running pytest is safe.
+    """
+    asyncio.run(seed_baseline())
+    yield
 
 
 @pytest.fixture
