@@ -54,3 +54,13 @@ For example:
 ```
 https://userapp.chtc.wisc.edu/api/users?page=0&page_size=50&date=order_by.desc
 ```
+
+### Tests
+
+To run the tests:
+
+```
+make test
+```
+
+Tests are also run remotely on every push.
