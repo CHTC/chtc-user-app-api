@@ -1,15 +1,11 @@
 name: Tests
 
-# Runs the test suite against a throwaway Postgres. Independent of
-# push-container.yml (which builds/pushes the image) — this only runs tests.
-
 on:
   push:
   pull_request:
   workflow_dispatch:
 
-# Cancel an in-progress run when newer commits land on the same ref.
-concurrency:
+concurrency: # cancel an in progress run on a new push
   group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -20,9 +16,6 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
 
-    # GitHub provisions Postgres as a sidecar container (the CI equivalent of the
-    # `docker run` in scripts/run_local_tests.sh). The job then talks to it on
-    # localhost via the mapped port.
     services:
       postgres:
         image: postgres:16
@@ -32,7 +25,6 @@ jobs:
           POSTGRES_DB: userapp_test
         ports:
           - 5432:5432
-        # Hold the job until Postgres is accepting connections.
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
@@ -40,8 +32,6 @@ jobs:
           --health-retries 5
 
     env:
-      # Connection info for the service above. Host/port differ from local
-      # (which uses 5433); everything else mirrors scripts/test.env.
       DB_HOST: localhost
       DB_PORT: "5432"
       DB_NAME: userapp_test
@@ -49,7 +39,6 @@ jobs:
       DB_PASSWORD: postgres
       SECRET_KEY: test-secret-ci
       TEST_ADMIN_ID: "4"
-      # No .venv in CI — point the shared scripts at the runner's Python.
       PYTHON: python
 
     steps:
@@ -64,7 +53,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Reuses the exact migrate + seed + pytest core that `make test` runs
-      # locally; only the database provisioning above differs.
       - name: Run migrations, seed, and tests
         run: make test-run

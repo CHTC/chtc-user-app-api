@@ -27,8 +27,6 @@ BLACK_IP = INVALID_CIDR_RANGE.split('/')[0]
 
 
 def _seed_db_url() -> str:
-    """Connection URL for seeding — DB_URL if set, else assembled from parts.
-    Same vars the app reads."""
     url = os.environ.get("DB_URL")
     if url:
         return url
@@ -39,9 +37,7 @@ def _seed_db_url() -> str:
 
 
 async def _seed_baseline() -> None:
-    """Insert the foundational rows the per-test fixtures assume exist
-    (e.g. existing_admin_user returns TEST_ADMIN_ID without creating it).
-    Idempotent: rows are only added if absent."""
+    """Seed data needed by certain tests - needed for testing on new empty DB"""
     engine = await connect_engine(_seed_db_url())
     async with async_sessionmaker(engine, expire_on_commit=False)() as s:
         async with s.begin():
@@ -71,11 +67,6 @@ async def _seed_baseline() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _baseline_seed():
-    """Insert the baseline fixture data once per session, before any test runs.
-
-    Assumes the schema already exists (the runner does `alembic upgrade head`
-    before invoking pytest). Idempotent, so re-running pytest is safe.
-    """
     asyncio.run(_seed_baseline())
     yield
 

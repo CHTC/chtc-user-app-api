@@ -1,11 +1,10 @@
-PYTHON            ?= .venv/bin/python
-
-DB_HOST       ?= localhost
-DB_PORT       ?= 5433
-DB_NAME       ?= userapp_test
-DB_USER       ?= postgres
-DB_PASSWORD   ?= postgres
-SECRET_KEY    ?= test-secret-local
+PYTHON ?= .venv/bin/python
+DB_HOST ?= localhost
+DB_PORT ?= 5433
+DB_NAME ?= userapp_test
+DB_USER ?= postgres
+DB_PASSWORD ?= postgres
+SECRET_KEY ?= test-secret-local
 TEST_ADMIN_ID ?= 4
 export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SECRET_KEY TEST_ADMIN_ID
 
