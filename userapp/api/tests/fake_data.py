@@ -8,6 +8,8 @@ from userapp.core.schemas.user_submit import UserSubmitPost
 
 def project_data_f(
     name: Optional[str] = None,
+    display_name: Optional[str] = None,
+    description: Optional[str] = None,
     pi: Optional[int] = None,
     staff1: Optional[int] = None,
     staff2: Optional[int] = None,
@@ -15,6 +17,8 @@ def project_data_f(
     access: Optional[str] = None,
     accounting_group: Optional[str] = None,
     url: Optional[str] = None,
+    college_and_department_id: Optional[int] = None,
+    fos_id: Optional[str] = None,
     date: Optional[datetime] = None,
     ticket: Optional[int] = None,
     last_contact: Optional[datetime] = None
@@ -22,6 +26,8 @@ def project_data_f(
     rand = random.randint(100000, 999999)
     return {
         "name": name if name else f"test-project-{rand}",
+        "display_name": display_name if display_name else f"Test Project {rand}",
+        "description": description if description else "# Test Project\n\nA **markdown** description.",
         "pi": pi,
         "staff1": staff1,
         "staff2": staff2,
@@ -29,6 +35,10 @@ def project_data_f(
         "access": access,
         "accounting_group": f"accounting-group-{rand}",
         "url": url if url else "http://example.com",
+        # FK fields default to None: college_and_departments has no rows in test,
+        # and a non-null fos_id would couple to seed contents. Pass explicitly to exercise them.
+        "college_and_department_id": college_and_department_id,
+        "fos_id": fos_id,
         "ticket": ticket,
         "last_contact": last_contact.isoformat() if last_contact else None
     }

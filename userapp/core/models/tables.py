@@ -59,6 +59,8 @@ class Project(Base):
     __tablename__ = 'projects'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
+    display_name = Column(String(255))
+    description = Column(Text)
     pi = Column(Integer, index=True)
     staff1 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     staff2 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
@@ -69,6 +71,8 @@ class Project(Base):
     date = Column(TIMESTAMP, nullable=False, server_default=func.now())
     ticket = Column(Integer)
     last_contact = Column(TIMESTAMP)
+    college_and_department_id = Column(Integer, ForeignKey('college_and_departments.id', ondelete='SET NULL'), index=True)
+    fos_id = Column(String(16), ForeignKey('fields_of_science.fos_id', ondelete='SET NULL'), index=True)
 
     staff1_user: Mapped[Optional["User"]] = relationship(
         "User",
@@ -80,7 +84,28 @@ class Project(Base):
         foreign_keys=[staff2],
         lazy="selectin",
     )
+    college_and_department: Mapped[Optional["CollegeAndDepartment"]] = relationship(
+        "CollegeAndDepartment",
+        lazy="select",
+    )
+    field_of_science: Mapped[Optional["FieldsOfScience"]] = relationship(
+        "FieldsOfScience",
+        lazy="select",
+    )
 
+class CollegeAndDepartment(Base):
+    __tablename__ = 'college_and_departments'
+    id = Column(Integer, primary_key=True, index=True)
+    college = Column(String(255))
+    department = Column(String(255))
+
+class FieldsOfScience(Base):
+    __tablename__ = 'fields_of_science'
+    fos_id = Column(String(16), primary_key=True, index=True)
+    sed_cip_title = Column(String(255))
+    broad_field	= Column(String(255))
+    major_field	= Column(String(255))
+    detailed_field = Column(String(255))
 
 class SubmitNode(Base):
     __tablename__ = 'submit_nodes'
