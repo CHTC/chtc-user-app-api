@@ -5,7 +5,7 @@ from pydantic import Field, model_validator, EmailStr
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum, RoleEnum
 from userapp.core.schemas.general import BaseModel
-from userapp.core.schemas.users import UserGet, UserSubmitPost
+from userapp.core.schemas.users import UserGet
 
 
 class UserFormPatch(BaseModel):
@@ -15,7 +15,7 @@ class UserFormPatch(BaseModel):
     email: Optional[EmailStr] = Field(default=None)
     project_id: Optional[int] = Field(default=None)
     user_position: Optional[PositionEnum] = Field(default=None)
-    submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=None)
+    submit_node_group_ids: Optional[list[int]] = Field(default=None)
 
 
 class UserFormTableSchema(BaseModel):

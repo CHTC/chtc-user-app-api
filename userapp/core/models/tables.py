@@ -8,10 +8,9 @@ from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum, \
-    EntityManagerEnum
+    EntityManagerEnum, GroupTypeEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
-from userapp.core.models.views import UserSubmitNodesView
 from userapp.core.models.views import UserApplicationView
 from userapp.core.models.views import UserGroupView
 
@@ -20,9 +19,11 @@ class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(VARCHAR(32), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
     point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     unix_gid = Column(Integer, unique=True)
     has_groupdir = Column(Boolean, nullable=False, default=True)
+    type = Column(SQLEnum(GroupTypeEnum, name='group_type_enum'), nullable=True)
 
     point_of_contact_user: Mapped[Optional["User"]] = relationship(
         "User",
@@ -82,11 +83,6 @@ class Project(Base):
     )
 
 
-class SubmitNode(Base):
-    __tablename__ = 'submit_nodes'
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(60))
-
 
 class User(Base):
     __tablename__ = 'users'
@@ -121,13 +117,6 @@ class User(Base):
         foreign_keys="[UserNote.user_id, UserNote.note_id]",
         lazy="selectin",
         back_populates="users"
-    )
-
-    submit_nodes: Mapped[List[UserSubmitNodesView]] = relationship(
-        "UserSubmitNodesView",
-        primaryjoin="User.id==foreign(UserSubmitNodesView.user_id)",
-        lazy="selectin",
-        viewonly=True,
     )
 
     projects: Mapped[List["JoinedProjectView"]] = relationship(
@@ -197,24 +186,6 @@ class UserProject(Base):
         Index('idx_user_project_managed_by', 'project_id', 'managed_by', 'user_id'),
     )
 
-
-class UserSubmit(Base):
-    __tablename__ = 'user_submits'
-    __table_args__ = (
-        UniqueConstraint('user_id', 'submit_node_id', 'for_auth_netid', name='user_submits_distinct'),
-        Index('idx_user_submits_userid_submitnodeid_incl', 'user_id', 'submit_node_id',
-              postgresql_include=['disk_quota', 'hpc_diskquota', 'hpc_inodequota', 'hpc_joblimit', 'hpc_corelimit', 'hpc_fairshare']),
-    )
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    submit_node_id = Column(Integer, ForeignKey('submit_nodes.id', ondelete="CASCADE"), nullable=False, index=True)
-    for_auth_netid = Column(Boolean)
-    disk_quota = Column(Integer)
-    hpc_diskquota = Column(Integer, nullable=False, default=100)
-    hpc_inodequota = Column(Integer, nullable=False, default=50000)
-    hpc_joblimit = Column(Integer, nullable=False, default=10)
-    hpc_corelimit = Column(Integer, nullable=False, default=720)
-    hpc_fairshare = Column(Integer, nullable=False, default=100)
 
 class Token(Base):
     __tablename__ = 'tokens'

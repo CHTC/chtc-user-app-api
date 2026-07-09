@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, relationship
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
+from userapp.core.models.enum import GroupTypeEnum, RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
 from userapp.core.models.main import Base
 
 
@@ -67,20 +67,6 @@ class JoinedProjectView(Base):
     unix_uid = Column(Integer)
     position = Column(SQLEnum(PositionEnum, name="position_enum"))
     last_note_ticket = Column(String(9))
-
-
-class UserSubmitNodesView(Base):
-    __tablename__ = 'user_submit_nodes'
-    __table_args__ = {'info': dict(is_view=True)}
-    user_id = Column(Integer, primary_key=True)
-    submit_node_id = Column(Integer, primary_key=True)
-    submit_node_name = Column(String(60))
-    disk_quota = Column(Integer)
-    hpc_diskquota = Column(Integer)
-    hpc_inodequota = Column(Integer)
-    hpc_joblimit = Column(Integer)
-    hpc_corelimit = Column(Integer)
-    hpc_fairshare = Column(Integer)
 
 
 class UserApplicationView(Base):
@@ -167,9 +153,11 @@ class UserGroupView(Base):
 
     # From Group
     name = Column(String(255))
+    description = Column(String(255))
     point_of_contact = Column(Integer)
     unix_gid = Column(Integer)
     has_groupdir = Column(Boolean)
+    type = Column(SQLEnum(GroupTypeEnum, name="group_type_enum"))
 
     point_of_contact_user: Mapped[Optional["User"]] = relationship(
         "User",
