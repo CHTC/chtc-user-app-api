@@ -15,7 +15,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 
 from sqlalchemy.sql.expression import SQLColumnExpression
-from sqlalchemy import or_, and_, Column, not_, func, distinct, cast, String, case
+from sqlalchemy import or_, and_, Column, not_, func, distinct, cast, String, case, true
 
 VALID_OPERATORS = ["not", "eq", "lt", "le", "gt", "ge", "ne", "like", "ilike", "in", "is"]
 
@@ -193,7 +193,9 @@ class QueryParser:
             return where_expressions[0]
 
         else:
-            return and_(*where_expressions)
+            # true() is the identity for AND; it also keeps and_() valid (not
+            # deprecated) when where_expressions is empty.
+            return and_(true(), *where_expressions)
 
 
     def get_or(self, query_param: QueryParameter):

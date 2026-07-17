@@ -54,3 +54,27 @@ For example:
 ```
 https://userapp.chtc.wisc.edu/api/users?page=0&page_size=50&date=order_by.desc
 ```
+
+### Tests
+
+Requires Docker (for a throwaway Postgres) and Python 3.12.
+
+First-time setup — create the virtualenv and install dependencies:
+
+```
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+Then run the full suite:
+
+```
+make test
+```
+
+To run against a different interpreter (e.g. an already-activated environment), override `PYTHON`:
+
+```
+make test PYTHON=python
+```
+
+On Windows, the virtualenv interpreter lives at `.venv/Scripts/python.exe` rather than `.venv/bin/python` 

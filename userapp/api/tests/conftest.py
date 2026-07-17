@@ -1,4 +1,5 @@
 from typing import Any, Generator, Callable
+import asyncio
 import pytest
 import os
 import random
@@ -10,16 +11,64 @@ from starlette.testclient import TestClient
 
 load_dotenv()
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from userapp.main import create_app
+from userapp.db import connect_engine
+from userapp.core.models.tables import User, SubmitNode, Group
 from userapp.api.routes.security import create_login_token
 from userapp.api.tests.fake_data import project_data_f, user_data_f
-
-os.environ["DB_URL"] = os.environ.get("TEST_DB_URL", "sqllite+aiosqlite:///./test.db")
 
 VALID_CIDR_RANGE = '128.104.55.0/24'
 INVALID_CIDR_RANGE = '127.0.0.0/24'
 WHITE_IP = VALID_CIDR_RANGE.split('/')[0]
 BLACK_IP = INVALID_CIDR_RANGE.split('/')[0]
+
+
+def _seed_db_url() -> str:
+    url = os.environ.get("DB_URL")
+    if url:
+        return url
+    return (
+        f"postgresql+asyncpg://{os.environ['DB_USER']}:{os.environ['DB_PASSWORD']}"
+        f"@{os.environ['DB_HOST']}:{os.environ.get('DB_PORT', '5432')}/{os.environ['DB_NAME']}"
+    )
+
+
+async def _seed_baseline() -> None:
+    """Seed data needed by certain tests - needed for testing on new empty DB"""
+    engine = await connect_engine(_seed_db_url())
+    async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+        async with s.begin():
+            # Submit node referenced by user_data_f (submit_node_id=1).
+            if not await s.get(SubmitNode, 1):
+                s.add(SubmitNode(id=1, name="seed-node"))
+            # Admin matching TEST_ADMIN_ID; unix_uid set so tests reading an
+            # existing user's uid have a non-null value.
+            if not await s.get(User, 4):
+                s.add(User(id=4, name="Seed Admin", is_admin=True, active=True, unix_uid=50000))
+            # Two groups so tests that read an existing group, reference
+            # group_id=1, or filter by has_groupdir have data present.
+            if not await s.get(Group, 1):
+                s.add(Group(id=1, name="seed-group-dir", unix_gid=55500, has_groupdir=True))
+            if not await s.get(Group, 2):
+                s.add(Group(id=2, name="seed-group-nodir", unix_gid=55501, has_groupdir=False))
+            await s.flush()
+            # Explicit ids do NOT advance the SERIAL sequences; bump each past
+            # MAX(id) so app-created rows don't collide with the seeded ids.
+            for table in ("submit_nodes", "users", "groups"):
+                await s.execute(text(
+                    f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+                    f"(SELECT COALESCE(MAX(id), 1) FROM {table}))"
+                ))
+    await engine.dispose()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _baseline_seed():
+    asyncio.run(_seed_baseline())
+    yield
 
 
 @pytest.fixture
