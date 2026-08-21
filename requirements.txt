@@ -17,7 +17,7 @@ alembic==1.19.1
 # Security & Authentication
 python-jose==3.5.0
 passlib==1.7.4
-bcrypt==4.3.0
+bcrypt==4.3.0 # Don't update this willy nilly. There is a incompatibility somewhere with 5.0.0
 PyJWT==2.13.0
 
 # HTTP Client
