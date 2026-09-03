@@ -56,6 +56,7 @@ async def list_select_stmt(
     page: int = 0,
     page_size: int = 100,
     load_options=None,
+    default_order_by=None,
 ):
     """Generic list endpoint generator"""
 
@@ -69,9 +70,17 @@ async def list_select_stmt(
     if load_options:
         paginated_select_stmt = paginated_select_stmt.options(*load_options)
 
-    if query_parser.get_order_by_columns() is not None and \
+    # get_order_by_columns() returns [] (not None) when the request asked for no
+    # ordering, so this has to be a truthiness check for the default below to reach.
+    if query_parser.get_order_by_columns() and \
             query_parser.get_group_by_column() is None:
         paginated_select_stmt = paginated_select_stmt.order_by(*query_parser.get_order_by_columns())
+
+    elif default_order_by is not None and query_parser.get_group_by_column() is None:
+        # LIMIT/OFFSET with no ORDER BY leaves the row order undefined, so paging a
+        # table bigger than page_size can repeat rows on one page and skip them on
+        # another. Only used when the request didn't specify its own order_by.
+        paginated_select_stmt = paginated_select_stmt.order_by(*default_order_by)
 
     result = await session.execute(paginated_select_stmt)
     results = result.unique().fetchall()
@@ -93,7 +102,8 @@ async def list_endpoint(
     filter_query_params,
     page: int = 0,
     page_size: int = 100,
-    load_options=None
+    load_options=None,
+    default_order_by=None
 ):
     """Generic list endpoint generator"""
     return await list_select_stmt(
@@ -105,6 +115,7 @@ async def list_endpoint(
         page_size=page_size,
         session=session,
         load_options=load_options,
+        default_order_by=default_order_by,
     )
 
 

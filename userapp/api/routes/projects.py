@@ -8,7 +8,8 @@ from userapp.query_parser import get_filter_query_params
 from userapp.api.routes.security import check_is_admin, get_user_from_cookie
 from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoint, update_one_endpoint, delete_one_endpoint, \
     list_select_stmt
-from userapp.core.schemas.projects import ProjectGet, ProjectPost, ProjectPatch
+from userapp.core.schemas.projects import ProjectGet, ProjectGetFull, ProjectPost, ProjectPatch
+from userapp.api.load_options import project_load_options
 from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema, UserProjectPatch
 from userapp.core.schemas.note import NoteGet, NoteTableSchema, NotePost, NoteGetFull
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema
@@ -21,6 +22,7 @@ from userapp.api.routes._util import _patch_user_project
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 NoteGetFull.model_rebuild(_types_namespace={'UserGet': UserGet})
 ProjectGet.model_rebuild(_types_namespace={'UserGet': UserGet})
+ProjectGetFull.model_rebuild(_types_namespace={'UserGet': UserGet})
 JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 router = APIRouter(
@@ -35,8 +37,8 @@ router = APIRouter(
 )
 
 @router.get("")
-async def get_projects(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[ProjectGet]:
-    x = await list_endpoint(session, ProjectTable, response, filter_query_params, page, page_size)
+async def get_projects(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator)) -> list[ProjectGetFull]:
+    x = await list_endpoint(session, ProjectTable, response, filter_query_params, page, page_size, load_options=project_load_options)
     return x
 
 
@@ -58,18 +60,18 @@ async def delete_project(project_id: int, session=Depends(session_generator)) ->
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: int, session=Depends(session_generator)) -> ProjectGet:
-    return await get_one_endpoint(session, ProjectTable,  project_id)
+async def get_project(project_id: int, session=Depends(session_generator)) -> ProjectGetFull:
+    return await get_one_endpoint(session, ProjectTable,  project_id, load_options=project_load_options)
 
 
 @router.post("", status_code=201)
-async def create_project(project: ProjectPost, session=Depends(session_generator)) -> ProjectGet:
-    return await create_one_endpoint(session, ProjectTable,  project)
+async def create_project(project: ProjectPost, session=Depends(session_generator)) -> ProjectGetFull:
+    return await create_one_endpoint(session, ProjectTable,  project, load_options=project_load_options)
 
 
 @router.put("/{project_id}", status_code=200)
-async def update_project(project_id: int, project: ProjectPatch, session=Depends(session_generator)) -> ProjectGet:
-    return await update_one_endpoint(session, ProjectTable,  project_id, project)
+async def update_project(project_id: int, project: ProjectPatch, session=Depends(session_generator)) -> ProjectGetFull:
+    return await update_one_endpoint(session, ProjectTable,  project_id, project, load_options=project_load_options)
 
 
 @router.get("/{project_id}/users")

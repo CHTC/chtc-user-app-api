@@ -8,6 +8,8 @@ from .submit_nodes import router as submit_nodes_router
 from .users import router as users_router
 from .tokens import router as tokens_router
 from .routes import router as routes_router
+from .fields_of_science import router as fields_of_science_router
+from .college_and_departments import router as college_and_departments_router
 
 all_routers = [
     routes_router,
@@ -19,5 +21,7 @@ all_routers = [
     security_router,
     submit_nodes_router,
     users_router,
-    tokens_router
+    tokens_router,
+    fields_of_science_router,
+    college_and_departments_router
 ]
