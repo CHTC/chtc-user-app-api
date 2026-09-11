@@ -1,5 +1,6 @@
 from userapp.api.routes.forms import router as forms_router
 from .groups import router as groups_router
+from .jobs import router as jobs_router
 from .managed import router as managed_router
 from .pi_projects import router as pi_projects_router
 from .projects import router as projects_router
@@ -13,6 +14,7 @@ all_routers = [
     routes_router,
     forms_router,
     groups_router,
+    jobs_router,
     managed_router,
     pi_projects_router,
     projects_router,
