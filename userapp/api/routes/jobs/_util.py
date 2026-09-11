@@ -19,6 +19,24 @@ condor_q holds the live queue and knows nothing about jobs that already finished
 A cluster in flight appears in both, split across them, so the two are merged and
 the terminal record wins.
 
+Windows that tile
+-----------------
+Both per-owner endpoints answer for a window of days, and the viewer now asks for
+a long span as a run of short windows -- one per week -- and merges them, so it
+can paginate a calendar without re-reading everything on every page. That only
+works if each window's answer is complete on its own, which pins down which jobs
+a window selects: every job that was open at any point inside it. Placed before
+the window closed, and either finished on or after it opened or not finished at
+all. A job that outlives the window is in it; a job that finished before it
+opened is not.
+
+The day summary used to select by "had a transition inside the window" instead,
+which is the same set for a window ending today and a different one for a window
+ending in the past: a job placed on the last day of a past window and finished a
+week later has no transition inside it, and dropping it hollowed out the
+end-of-day census and cut every cohort's story short at the window's edge. See
+fetch_day_buckets and _DayAggregator for what changed.
+
 Bucketing and DST
 -----------------
 The bakes bucketed with a plain Elasticsearch histogram over a fixed 86400s
@@ -89,13 +107,28 @@ DAY_SECONDS = 86400
 # than a silent trim, so a truncated answer never reads as a complete one.
 CLUSTER_LIMIT = 1000
 
-# Reach well before the window for live ads: a job submitted months ago and still
-# idle is part of what changed state during the window, and condor_q always
-# applies a QDate window of its own. Jobs older than the window get no cohort
-# card (their queue day lands outside it), only activity.
+# The live queue is read once per owner and shared by every window that owner is
+# asked about, so it reaches back far enough to serve any window the endpoints
+# accept: a job submitted a year before the oldest allowed start and still idle
+# is in play throughout. condor_q always applies a QDate window of its own, so
+# this is that window's lower edge, counted back from now.
 LIVE_LOOKBACK_DAYS = 365
+LIVE_QUERY_LOOKBACK_DAYS = LIVE_LOOKBACK_DAYS + 366
 LIVE_LIMIT = 500_000
 LIVE_TIMEOUT = float(os.environ.get("CONDOR_Q_TIMEOUT", "180"))
+
+# Every attribute either endpoint reads off a live ad. One list rather than one
+# per endpoint, so the two can share a single condor_q answer.
+LIVE_ATTRS = [
+    "ClusterId", "QDate", "JobStatus", "JobStartDate", "EnteredCurrentStatus",
+    "NumJobStarts",
+    # What the supersede check matches on: aggregations give no per-job keys,
+    # so overlap with a terminal record has to be resolved against these.
+    "GlobalJobId",
+    # A cluster still entirely in the queue has no terminal record at all, so
+    # this is the only place its batch name can come from.
+    "JobBatchName",
+]
 
 # These aggregations cost seconds of Elasticsearch time and up to minutes of
 # schedd time, and a page refresh asks for the identical window, so an answer is
@@ -251,11 +284,56 @@ class Calendar:
             return -1
         return bisect_right(self.bin_boundaries, value) - 1
 
+    def day_index_clamped(self, seconds: Any) -> int:
+        """Day index, or -1 before the window, or len(self) at or after its end.
+
+        The plain day_index folds both sides into -1, which was fine while a
+        window always ended today: nothing could lie beyond it. A window in the
+        past has jobs that started or finished after it closed, and those must
+        not be mistaken for ones that started or finished before it opened -- the
+        first was queued throughout, the second was never there at all.
+        """
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            return -1
+        if value < self.start_sec:
+            return -1
+        if value >= self.end_sec:
+            return len(self)
+        return bisect_right(self.day_boundaries, value) - 1
+
     def day_index_from_key(self, key_ms: Any) -> int:
         """Histogram bucket key (epoch millis) -> day index, or -1."""
         if key_ms is None:
             return -1
         return self.day_index(float(key_ms) / 1000)
+
+    def day_index_from_key_clamped(self, key_ms: Any) -> int:
+        """Histogram bucket key (epoch millis) -> day_index_clamped."""
+        if key_ms is None:
+            return -1
+        return self.day_index_clamped(float(key_ms) / 1000)
+
+    def day_key(self, seconds: Any) -> Optional[str]:
+        """The local calendar date of a timestamp as "YYYY-MM-DD", inside the
+        window or not. None for junk, and for the zero that means "no such
+        timestamp" -- which is also where the histograms' `missing: 0` lands."""
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            return None
+        if value <= 0:
+            return None
+        return datetime.fromtimestamp(value, TZ).date().isoformat()
+
+    def day_key_from_key(self, key_ms: Any) -> Optional[str]:
+        """Histogram bucket key (epoch millis) -> day_key. The missing bucket's
+        key is local midnight of the epoch's day, which is before the epoch in
+        any zone west of Greenwich and so reads as None here too."""
+        if key_ms is None:
+            return None
+        return self.day_key(float(key_ms) / 1000)
 
     def bin_index_from_key(self, key_ms: Any) -> int:
         """Histogram bucket key (epoch millis) -> bin index, or -1."""
@@ -487,6 +565,38 @@ async def fetch_opening_active(client: httpx.AsyncClient, owner: str, calendar: 
     return {int(bucket["key"]): bucket["doc_count"] for bucket in _cluster_buckets(response)}
 
 
+def overlap_query(owner: str, calendar: Calendar) -> dict:
+    """Every terminal record of `owner` whose job was open at some point inside
+    the window: placed before the window closed, and finished on or after it
+    opened.
+
+    That is the selection that makes windows tile (see the module note). It
+    contains everything the old "had a transition inside the window" filter
+    did -- a placement or an end inside the window both imply overlap -- and adds
+    the jobs that were placed before the window and finished after it, which are
+    exactly the ones a past window was missing from its end-of-day census.
+
+    A record with no usable end is kept only if it was placed inside the window:
+    its timeline is unknowable, so it counts as a placement and nothing more,
+    which is what the old filter did with it too.
+    """
+    return {
+        "bool": {
+            # adstash maps these as bare keyword fields, not text with a .keyword
+            # subfield.
+            "filter": [
+                {"term": {"Owner": owner}},
+                {"range": {"QDate": {"lt": calendar.end_sec, "format": "epoch_second"}}},
+            ],
+            "should": [
+                {"range": {"EnteredCurrentStatus": {"gte": calendar.start_sec, "format": "epoch_second"}}},
+                {"range": {"QDate": {"gte": calendar.start_sec, "format": "epoch_second"}}},
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
 async def fetch_day_buckets(client: httpx.AsyncClient, owner: str, calendar: Calendar) -> list[dict]:
     """The whole window as one nested aggregation.
 
@@ -496,27 +606,16 @@ async def fetch_day_buckets(client: httpx.AsyncClient, owner: str, calendar: Cal
     any day D follows arithmetically from that: terminal if endDay <= D, else
     running if startDay <= D, else queued.
 
-    Two different questions need two different filters, so the query is their
-    union: QDate in window means the job gets a cohort of its own, while a
-    transition in window means it contributes to "changed state this day" even if
-    it was submitted long before. Filtering on QDate alone undercounts the
-    transition numbers.
+    The selection is every job open at some point in the window (overlap_query).
+    A job placed inside it gets a cohort of its own; a job placed before it gets a
+    cohort keyed by its real placement day, covering only the window's days; and
+    both contribute to the transition counts and the end-of-day census on the
+    days they were here.
     """
     body = {
         "size": 0,
         "track_total_hits": True,
-        "query": {
-            "bool": {
-                "filter": [{"term": {"Owner": owner}}],
-                "should": [
-                    _in_window("QDate", calendar),
-                    _in_window("JobStartDate", calendar),
-                    _in_window("CompletionDate", calendar),
-                    _in_window("EnteredCurrentStatus", calendar),
-                ],
-                "minimum_should_match": 1,
-            }
-        },
+        "query": overlap_query(owner, calendar),
         "aggs": {
             "cluster": {
                 "terms": {"field": "ClusterId", "size": CLUSTER_LIMIT},
@@ -609,9 +708,7 @@ async def owner_schedds(session, user_id: int) -> list[str]:
     return sorted({name for name in rows if name and "." in name})
 
 
-async def fetch_live_ads(
-    schedds: list[str], owner: str, calendar: Calendar, attrs: list[str]
-) -> tuple[dict[str, dict], list[str]]:
+async def query_live_ads(schedds: list[str], owner: str) -> tuple[dict[str, dict], list[str]]:
     """Query every schedd for this owner's live ads, keyed "<schedd>:<cluster>.<proc>".
 
     Keys are qualified by schedd because condor_q's own keys are unique only
@@ -621,18 +718,27 @@ async def fetch_live_ads(
     source for jobs that have not reached a terminal state, so losing one means
     an understatement, not a wrong answer -- and an understated page beats no
     page at all when a single AP is down or off VPN.
+
+    Not window-specific: this asks for everything the owner has in the queue back
+    to LIVE_QUERY_LOOKBACK_DAYS, and the caller narrows it to a window with
+    live_ads_in_window. The queue is the same queue whichever week is being
+    looked at, and it is the slow leg of every request, so it is read once.
     """
     if not schedds:
         return {}, ["no submit nodes on record for this user; the live queue was not queried"]
 
-    live_start = calendar.start - timedelta(days=LIVE_LOOKBACK_DAYS)
+    now = datetime.now(TZ)
+    live_start = now - timedelta(days=LIVE_QUERY_LOOKBACK_DAYS)
+    # A little past now, so an ad queued between building this timestamp and the
+    # schedd answering is not cut off by the window's exclusive end.
+    live_end = now + timedelta(days=1)
 
     async def query(schedd: str) -> dict[str, dict]:
         return await condor_q(
             constraint=f"Owner == {cq_quote(owner)}",
-            attrs=attrs,
+            attrs=LIVE_ATTRS,
             start=live_start,
-            end=calendar.end,
+            end=live_end,
             pool=CONDOR_POOL,
             name=schedd,
             # The API service is not the owner, so its own jobs are not the ones
@@ -654,6 +760,51 @@ async def fetch_live_ads(
         for key, ad in result.items():
             ads[f"{schedd}:{key}"] = ad
     return ads, errors
+
+
+def live_ads_in_window(ads: dict[str, dict], calendar: Calendar) -> dict[str, dict]:
+    """The live ads that were open at some point inside the window.
+
+    A live ad is open now, so it overlaps any window that closes after it was
+    placed: the only test is QDate before the window's end. An ad placed after a
+    past window closed was not there yet and is left out, which is what keeps a
+    past week's census from counting this week's submissions.
+
+    Ads with no readable QDate are kept. Dropping a job for a missing attribute
+    would understate the queue, and the aggregators already treat an unknown
+    placement as "before the window".
+    """
+    selected: dict[str, dict] = {}
+    for key, ad in ads.items():
+        queued_at = _as_seconds(ad.get("QDate"))
+        if queued_at is None or queued_at < calendar.end_sec:
+            selected[key] = ad
+    return selected
+
+
+async def fetch_live_ads(
+    client: httpx.AsyncClient, schedds: list[str], owner: str, calendar: Calendar
+) -> tuple[dict[str, dict], list[str]]:
+    """This owner's live ads that overlap the window, with any terminal record
+    that supersedes one already removed.
+
+    The condor_q fan-out and the supersede check run once per owner and are held
+    for CACHE_SECONDS, then narrowed to the window here. A calendar month asked
+    for as five weekly windows costs one read of the queue rather than five --
+    and the lock inside the cache means the five arriving together still cost one.
+    """
+    async def build() -> tuple[dict[str, dict], list[str]]:
+        ads, errors = await query_live_ads(schedds, owner)
+        superseded = await drop_superseded_ads(client, ads)
+        if superseded:
+            logger.info("%d live ads superseded by a terminal record", superseded)
+        return ads, errors
+
+    ads, errors = await _cached_in(
+        _live_cache, _live_cache_locks, ("live", owner, tuple(schedds)),
+        CACHE_SECONDS, LIVE_CACHE_MAX_ENTRIES, build,
+    )
+    return live_ads_in_window(ads, calendar), errors
 
 
 # --- Batch names --------------------------------------------------------------
@@ -783,6 +934,13 @@ _day_cache: dict[tuple, tuple[float, Any]] = {}
 _day_cache_locks: dict[tuple, asyncio.Lock] = {}
 DAY_CACHE_MAX_ENTRIES = 512
 
+# The live queue, per owner. Separate from the payload cache for the same reason
+# the days are: a payload is one window's answer, while the queue is shared by
+# every window of that owner, and the two would otherwise evict each other.
+_live_cache: dict[tuple, tuple[float, Any]] = {}
+_live_cache_locks: dict[tuple, asyncio.Lock] = {}
+LIVE_CACHE_MAX_ENTRIES = 64
+
 
 async def _cached_in(
     store: dict,
@@ -910,17 +1068,10 @@ async def build_job_series(
         # Independent of each other, so they run together: the live queue is the
         # slowest leg by far and there is no reason for Adstash to wait on it.
         (live_ads, live_errors), opening, cluster_buckets = await asyncio.gather(
-            fetch_live_ads(
-                schedds, owner, calendar,
-                ["ClusterId", "QDate", "JobStatus", "GlobalJobId", "JobBatchName"],
-            ),
+            fetch_live_ads(client, schedds, owner, calendar),
             fetch_opening_active(client, owner, calendar),
             fetch_bin_buckets(client, owner, calendar),
         )
-        superseded = await drop_superseded_ads(client, live_ads)
-
-    if superseded:
-        logger.info("%d live ads superseded by a terminal record", superseded)
 
     # 1. Live queue: the only source for jobs with no terminal record yet.
     for ad in live_ads.values():
@@ -1040,6 +1191,12 @@ class _DayAggregator:
           Kept per queue day rather than as one D x D block because most
           clusters submit on one or two days and the empty rows are the bulk of
           that block.
+      pre_states["YYYY-MM-DD"][asOfDay * 4 + state]
+          the same, for cohorts placed before the window opened, keyed by their
+          real placement day. Only the jobs still open when the window opened
+          are here -- the ones that finished earlier were never selected -- so
+          such a cohort's numbers describe its survivors, and the window that
+          contains its placement day is the one that has the whole cohort.
       activity[day * 3 + {0 started, 1 completed, 2 removed}]
           transitions that happened on `day`, whatever day the job was queued.
     """
@@ -1053,6 +1210,8 @@ class _DayAggregator:
         # cluster whose jobs disagree can be reported.
         self.batch_tally: dict[int, dict[str, int]] = {}
         self.states: list[dict[int, array]] = []
+        self.pre_states: list[dict[str, array]] = []
+        self.pre_totals: list[dict[str, int]] = []
         self.activity: list[array] = []
         self.changed: list[array] = []   # distinct jobs that moved that day
         self.flows: list[array] = []     # Sankey edge weights
@@ -1070,7 +1229,7 @@ class _DayAggregator:
         self.start_active: list[int] = []
         self.cohort_totals: list[array] = []
         self.held_live = 0
-        self.outside_window = 0
+        self.placed_before_window = 0
         self.counted = 0
 
     def _slot_for(self, cluster_id: int) -> int:
@@ -1080,6 +1239,8 @@ class _DayAggregator:
             self.cluster_ids.append(cluster_id)
             D = self.D
             self.states.append({})
+            self.pre_states.append({})
+            self.pre_totals.append({})
             self.activity.append(_zeros(D * 3))
             self.changed.append(_zeros(D))
             self.flows.append(_zeros(D * FLOW_COUNT))
@@ -1102,17 +1263,29 @@ class _DayAggregator:
         count: int = 1,
         ever_ran: Optional[bool] = None,
         has_end: Optional[bool] = None,
+        queue_key: Optional[str] = None,
     ) -> None:
         """Fold one bucket of identical jobs in.
 
+        Day indices come from Calendar.day_index_clamped: -1 means before the
+        window opened, D (the number of days) means at or after it closed, and
+        anything in between is a day of the window. The two outside values are
+        not interchangeable -- a job that starts after the window was queued all
+        the way through it, while one that started before it was running -- so
+        every test below asks which side it is on.
+
         queue_day     day index the job was submitted, or -1 if before the window
-        run_from_day  day index from which to paint it Running, or -1. Distinct
-                      from started_day because a live ad that ran and was evicted
-                      back to Idle has a JobStartDate but is not running now, and
-                      the four-state model cannot say "ran, then queued again".
-        started_day   day index of JobStartDate for the transition count, or -1
-        end_day       day index it reached its terminal state, or -1
-        end_state     STATE_COMPLETED or STATE_REMOVED when end_day >= 0
+        queue_key     the real "YYYY-MM-DD" it was submitted, used when queue_day
+                      is -1 to file the job under a cohort of its own placement
+                      day. None when the placement day is unknown.
+        run_from_day  day index from which to paint it Running, -1 (never inside
+                      the window, or before it: see ever_ran) or D. Distinct from
+                      started_day because a live ad that ran and was evicted back
+                      to Idle has a JobStartDate but is not running now, and the
+                      four-state model cannot say "ran, then queued again".
+        started_day   day index of JobStartDate for the transition count, -1 or D
+        end_day       day index it reached its terminal state, -1 or D
+        end_state     STATE_COMPLETED or STATE_REMOVED when it has an end
         count         how many identical jobs this represents
         ever_ran      whether the job ever ran, which is not the same as
                       started_day >= 0: a job that started before the window ran,
@@ -1121,22 +1294,40 @@ class _DayAggregator:
         """
         if count <= 0:
             return
+        D = self.D
         if ever_ran is None:
             ever_ran = started_day >= 0
         if has_end is None:
             has_end = end_day >= 0
 
         slot = self._slot_for(cluster_id)
-        D = self.D
         activity = self.activity[slot]
         changed = self.changed[slot]
         flows = self.flows[slot]
 
-        # A job submitted before the window has no cohort tile of its own, but
-        # its transitions still land on the days they happened, so it falls
-        # through to the activity counters below.
+        def state_on(day: int) -> int:
+            # Terminal from its end day, running from its start day, queued
+            # before either. An end or start at D never arrives inside the loop.
+            if end_day >= 0 and day >= end_day:
+                return end_state
+            if run_from_day >= 0 and day >= run_from_day:
+                return STATE_RUNNING
+            return STATE_QUEUED
+
         if queue_day < 0:
-            self.outside_window += count
+            # Placed before the window. Its transitions still land on the days
+            # they happened, and it holds a place in the census; and when its
+            # placement day is known it gets a cohort keyed by that day, so a
+            # viewer merging several windows can carry the cohort across them.
+            self.placed_before_window += count
+            if queue_key is not None:
+                totals = self.pre_totals[slot]
+                totals[queue_key] = totals.get(queue_key, 0) + count
+                states = self.pre_states[slot].get(queue_key)
+                if states is None:
+                    states = self.pre_states[slot][queue_key] = _zeros(D * STATE_COUNT)
+                for day in range(D):
+                    states[day * STATE_COUNT + state_on(day)] += count
         else:
             self.cohort_totals[slot][queue_day] += count
             self.counted += count
@@ -1147,20 +1338,17 @@ class _DayAggregator:
 
             # Walk the timeline once, from the queue day to the window edge.
             for day in range(queue_day, D):
-                if end_day >= 0 and day >= end_day:
-                    state = end_state
-                elif run_from_day >= 0 and day >= run_from_day:
-                    state = STATE_RUNNING
-                else:
-                    state = STATE_QUEUED
-                states[day * STATE_COUNT + state] += count
+                states[day * STATE_COUNT + state_on(day)] += count
+
+        started_inside = 0 <= started_day < D
+        ended_inside = 0 <= end_day < D
 
         # Per-transition counts. A job that started and finished the same day
         # lands on both lines, which is why these are not comparable to
         # `changed` below.
-        if started_day >= 0:
+        if started_inside:
             activity[started_day * 3] += count
-        if end_day >= 0:
+        if ended_inside:
             activity[end_day * 3 + (1 if end_state == STATE_COMPLETED else 2)] += count
 
         # Distinct jobs that moved at all on a given day. Every job in this
@@ -1168,15 +1356,16 @@ class _DayAggregator:
         # counts a start-and-finish-same-day job once rather than twice. Buckets
         # partition the corpus, so summing these across buckets stays a true
         # distinct-job count.
-        if started_day >= 0:
+        if started_inside:
             changed[started_day] += count
-        if end_day >= 0 and end_day != started_day:
+        if ended_inside and end_day != started_day:
             changed[end_day] += count
 
         # End-of-day census. Runs over every job, including those placed before
-        # the window (which have no cohort and so are skipped by the timeline
-        # above) -- omitting them would understate the carried-over backlog by
-        # the entire pre-window population.
+        # the window -- omitting them would understate the carried-over backlog
+        # by the entire pre-window population. A job that ended after the window
+        # (end_day == D) holds its place on every day; only one that ended before
+        # it opened was never here.
         end_placed = self.end_placed[slot]
         end_active = self.end_active[slot]
         queued_before_window = queue_day < 0     # QDate can only precede the window
@@ -1203,11 +1392,11 @@ class _DayAggregator:
         # Sankey edges. "Placed Today" means placed on the same day as the
         # transition being drawn, so the same job can be Placed-Today in one
         # day's diagram and Placed-Before in the next day's.
-        if started_day >= 0:
+        if started_inside:
             placed_today = queue_day == started_day
             slot_index = FLOW_PLACED_TODAY_ACTIVE if placed_today else FLOW_PLACED_BEFORE_ACTIVE
             flows[started_day * FLOW_COUNT + slot_index] += count
-        if end_day >= 0:
+        if ended_inside:
             placed_today = queue_day == end_day
             if end_state == STATE_COMPLETED:
                 if ever_ran:
@@ -1233,12 +1422,14 @@ class _DayAggregator:
         days = self.calendar.days
         D = self.D
 
-        # Stable, readable ordering: biggest clusters first. Clusters with
-        # neither a cohort nor a transition contribute nothing and are dropped.
+        # Stable, readable ordering: biggest clusters first. Clusters with no
+        # cohort of either kind and no transition contribute nothing and are
+        # dropped. A cluster whose jobs were all placed before the window and sat
+        # idle through it stays: it has no activity, but it is the backlog.
         order = [
             (cluster_id, slot)
             for slot, cluster_id in enumerate(self.cluster_ids)
-            if any(self.cohort_totals[slot]) or any(self.activity[slot])
+            if any(self.cohort_totals[slot]) or self.pre_totals[slot] or any(self.activity[slot])
         ]
         order.sort(key=lambda pair: (-sum(self.cohort_totals[pair[1]]), pair[0]))
 
@@ -1283,6 +1474,28 @@ class _DayAggregator:
                     "queued": queued,
                     "asOf": as_of,
                 })
+
+            # Cohorts placed before the window, keyed by their real day. Every
+            # day of the window carries meaning for these, since the cohort
+            # already existed when it opened.
+            for queue_key, queued in sorted(self.pre_totals[slot].items()):
+                states = self.pre_states[slot][queue_key]
+                cohorts.append({
+                    "cluster": cluster_id,
+                    "day": queue_key,
+                    "queued": queued,
+                    "asOf": {
+                        days[day]: (
+                            states[day * STATE_COUNT],
+                            states[day * STATE_COUNT + 1],
+                            states[day * STATE_COUNT + 2],
+                            states[day * STATE_COUNT + 3],
+                        )
+                        for day in range(D)
+                    },
+                })
+                if first_day is None or queue_key < first_day:
+                    first_day = queue_key
 
             acts = self.activity[slot]
             changed = self.changed[slot]
@@ -1343,9 +1556,11 @@ class _DayAggregator:
             member["total"] += cluster_total
             member["clusters"].add(cluster_id)
 
-            # A cluster whose jobs were all submitted before the window still
-            # belongs in the picker if any of them moved during it, so a total of
-            # 0 is legitimate here.
+            # `total` counts the jobs placed inside the window, so it adds up
+            # across tiled windows. A cluster whose jobs were all placed before
+            # the window still belongs in the picker if any of them were open
+            # during it, so a total of 0 is legitimate here; its firstQueued then
+            # names the earliest pre-window cohort.
             clusters.append({
                 "id": cluster_id,
                 "total": cluster_total,
@@ -1369,7 +1584,7 @@ class _DayAggregator:
             "carry": carry,
             "sources": sources,
             "counted": self.counted,
-            "skippedOutsideWindow": self.outside_window,
+            "placedBeforeWindow": self.placed_before_window,
         }
 
 
@@ -1392,27 +1607,9 @@ async def build_job_day_summary(
 
     async with _es_client() as client:
         (live_ads, live_errors), cluster_buckets = await asyncio.gather(
-            fetch_live_ads(
-                schedds, owner, calendar,
-                [
-                    "QDate", "JobStatus", "JobStartDate", "EnteredCurrentStatus",
-                    "NumJobStarts",
-                    # What the supersede check matches on: aggregations give no
-                    # per-job keys, so overlap has to be resolved against these.
-                    "GlobalJobId",
-                    # A cluster still entirely in the queue has no terminal
-                    # record at all, so this is the only place its batch name can
-                    # come from.
-                    "JobBatchName",
-                ],
-            ),
+            fetch_live_ads(client, schedds, owner, calendar),
             fetch_day_buckets(client, owner, calendar),
         )
-        total_live = len(live_ads)
-        superseded = await drop_superseded_ads(client, live_ads)
-
-    if superseded:
-        logger.info("%d live ads superseded by a terminal record", superseded)
 
     # 1. Terminal records.
     leaf_buckets = 0
@@ -1432,8 +1629,11 @@ async def build_job_day_summary(
 
             for queue_bucket in (status_bucket.get("queueDay") or {}).get("buckets", []):
                 queue_day = calendar.day_index_from_key(queue_bucket["key"])
+                queue_key = calendar.day_key_from_key(queue_bucket["key"])
                 for start_bucket in (queue_bucket.get("startDay") or {}).get("buckets", []):
-                    start_day = calendar.day_index_from_key(start_bucket["key"])
+                    # Clamped: a start after the window closed must read as
+                    # "queued throughout", not as "running since before it".
+                    start_day = calendar.day_index_from_key_clamped(start_bucket["key"])
                     # Distinguishes "started before the window" from "never
                     # started": both give -1, but only the first occupied Active.
                     ever_ran = calendar.has_timestamp(start_bucket["key"])
@@ -1447,9 +1647,14 @@ async def build_job_day_summary(
                         aggregator.add(
                             cluster,
                             queue_day,
-                            run_from_day=start_day,
+                            queue_key=queue_key,
+                            # A job that started before the window was running
+                            # from its first day. Left at -1 it would be painted
+                            # queued, and a cohort's queued/running split would
+                            # disagree between a window and the one before it.
+                            run_from_day=0 if ever_ran and start_day < 0 else start_day,
                             started_day=start_day,
-                            end_day=calendar.day_index_from_key(end_bucket["key"]),
+                            end_day=calendar.day_index_from_key_clamped(end_bucket["key"]),
                             end_state=STATE_REMOVED if removed else STATE_COMPLETED,
                             count=end_bucket["doc_count"],
                             ever_ran=ever_ran,
@@ -1471,14 +1676,18 @@ async def build_job_day_summary(
         if status == 5:
             aggregator.held_live += 1
         started_at = _as_seconds(ad.get("JobStartDate"))
-        started_day = calendar.day_index(started_at)
+        # Clamped for the same reason as the terminal records: a past window
+        # can hold an ad that only started after it closed.
+        started_day = calendar.day_index_clamped(started_at)
         note_batch(aggregator.batch_tally, cluster, ad.get("JobBatchName"), 1)
         aggregator.add(
             cluster,
             calendar.day_index(ad.get("QDate")),
+            queue_key=calendar.day_key(ad.get("QDate")),
             # Only a Running ad (JobStatus 2) is actually running; Idle and Held
-            # both read as Queued.
-            run_from_day=started_day if status == 2 else -1,
+            # both read as Queued. One that started before the window has been
+            # running since its first day.
+            run_from_day=max(started_day, 0) if status == 2 else -1,
             started_day=started_day,
             end_day=-1,
             # A live ad knows whether it ever ran even when the start fell before
@@ -1497,13 +1706,13 @@ async def build_job_day_summary(
             "adstash": {
                 "host": ES_HOST,
                 "index": ES_INDEX,
-                "terminalRecords": aggregator.counted + aggregator.outside_window - len(live_ads),
+                "terminalRecords": aggregator.counted + aggregator.placed_before_window - len(live_ads),
             },
             "condorQ": {
                 "pool": CONDOR_POOL,
                 "schedd": _schedd_summary(schedds),
                 "schedds": schedds,
-                "liveAds": total_live,
+                "liveAds": len(live_ads),
                 "stillQueued": len(live_ads),
                 "errors": live_errors,
             },
