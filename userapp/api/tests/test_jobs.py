@@ -57,7 +57,7 @@ def stub_builders(monkeypatch):
         payload["sources"]["adstash"]["terminalRecords"] = 0
         payload["sources"]["condorQ"]["stillQueued"] = 0
         return {**payload, "states": [], "clusters": [], "cohorts": [], "activity": [],
-                "carry": [], "counted": 0, "skippedOutsideWindow": 0}
+                "carry": [], "counted": 0, "placedBeforeWindow": 0}
 
     async def fake_user_range_summary(start, end):
         calls.append({"endpoint": "users", "start": start, "end": end})
@@ -580,3 +580,233 @@ class TestCalendarRangeParameters:
         windows = [(call.get("start"), call.get("end")) for call in stub_builders]
         assert ("2026-07-01", "2026-08-01") in windows
         assert ("2026-06-01", "2026-07-01") in windows
+
+
+class TestWindowSides:
+    """A past window has jobs on both sides of it, and the two sides differ."""
+
+    def setup_method(self):
+        self.week = _util.build_calendar_for_range("2026-08-28", "2026-09-04")
+
+    def test_clamped_index_tells_before_from_after(self):
+        week = self.week
+
+        assert week.day_index_clamped(week.start_sec - 1) == -1
+        assert week.day_index_clamped(week.start_sec) == 0
+        assert week.day_index_clamped(week.end_sec - 1) == 6
+        assert week.day_index_clamped(week.end_sec) == len(week) == 7
+        assert week.day_index_clamped("junk") == -1
+
+    def test_the_plain_index_folds_both_sides_together(self):
+        # What the clamped variant exists to fix; kept as documentation.
+        week = self.week
+
+        assert week.day_index(week.start_sec - 1) == -1
+        assert week.day_index(week.end_sec) == -1
+
+    def test_day_key_names_days_outside_the_window(self):
+        week = self.week
+
+        assert week.day_key(week.start_sec - 3600) == "2026-08-27"
+        assert week.day_key(week.end_sec + 3600) == "2026-09-04"
+        assert week.day_key(0) is None
+        assert week.day_key(None) is None
+        assert week.day_key_from_key(week.missing_day_key_ms) is None, "the missing bucket is not a day"
+
+
+class TestOverlapSelection:
+    """Which jobs a window selects: everything open at some point inside it."""
+
+    def setup_method(self):
+        self.week = _util.build_calendar_for_range("2026-08-28", "2026-09-04")
+
+    def test_terminal_records_are_kept_when_they_outlive_the_window(self):
+        query = _util.overlap_query("alice", self.week)["bool"]
+
+        assert {"term": {"Owner": "alice"}} in query["filter"]
+        placed = next(f["range"]["QDate"] for f in query["filter"] if "range" in f)
+        assert placed["lt"] == self.week.end_sec
+        assert "gte" not in placed, "a job placed long before the window may still be in it"
+
+        ends = [s["range"] for s in query["should"]]
+        assert {"EnteredCurrentStatus": {"gte": self.week.start_sec, "format": "epoch_second"}} in ends
+        assert {"QDate": {"gte": self.week.start_sec, "format": "epoch_second"}} in ends
+        assert query["minimum_should_match"] == 1
+
+    def test_live_ads_are_kept_when_placed_before_the_window_closed(self):
+        week = self.week
+        ads = {
+            "old": {"QDate": week.start_sec - 90 * _util.DAY_SECONDS},
+            "inside": {"QDate": week.end_sec - 1},
+            "later": {"QDate": week.end_sec},
+            "unknown": {},
+        }
+
+        selected = _util.live_ads_in_window(ads, week)
+
+        assert set(selected) == {"old", "inside", "unknown"}
+
+
+class TestDayAggregatorAcrossWindows:
+    """The day summary for one window is complete on its own, so consecutive
+    windows can be stitched together by a viewer."""
+
+    def setup_method(self):
+        self.week = _util.build_calendar_for_range("2026-08-28", "2026-09-04")
+        self.D = len(self.week)
+
+    def _payload(self, aggregator):
+        return aggregator.to_payload("alice", {})
+
+    def _carry(self, payload):
+        return {row["day"]: row for row in payload["carry"]}
+
+    def test_a_job_that_outlives_the_window_holds_its_place_every_day(self):
+        aggregator = _util._DayAggregator(self.week)
+        aggregator.add(
+            9, -1, queue_key="2026-08-27",
+            run_from_day=-1, started_day=-1, end_day=self.D,
+            end_state=_util.STATE_COMPLETED, count=5, ever_ran=False, has_end=True,
+        )
+
+        payload = self._payload(aggregator)
+        carry = self._carry(payload)
+
+        assert carry[_util.WINDOW_START_DAY]["placed"] == 5
+        for day in self.week.days:
+            assert (carry[day]["placed"], carry[day]["active"]) == (5, 0), day
+        assert payload["activity"] == [], "nothing moved inside the window"
+        assert payload["counted"] == 0
+        assert payload["placedBeforeWindow"] == 5
+
+        (cohort,) = payload["cohorts"]
+        assert cohort["day"] == "2026-08-27", "filed under its real placement day"
+        assert cohort["queued"] == 5
+        assert cohort["asOf"][self.week.days[0]] == (5, 0, 0, 0)
+        assert cohort["asOf"][self.week.days[-1]] == (5, 0, 0, 0)
+
+        (cluster,) = payload["clusters"]
+        assert cluster["total"] == 0, "total counts placements inside the window"
+        assert cluster["firstQueued"] == "2026-08-27"
+
+    def test_a_start_after_the_window_reads_as_queued_throughout(self):
+        aggregator = _util._DayAggregator(self.week)
+        aggregator.add(
+            9, -1, queue_key="2026-08-27",
+            run_from_day=self.D, started_day=self.D, end_day=self.D,
+            count=2, ever_ran=True, has_end=True,
+        )
+
+        payload = self._payload(aggregator)
+        carry = self._carry(payload)
+
+        for day in self.week.days:
+            assert (carry[day]["placed"], carry[day]["active"]) == (2, 0), day
+        assert payload["activity"] == []
+        assert all(states == (2, 0, 0, 0) for states in payload["cohorts"][0]["asOf"].values())
+
+    def test_a_start_before_the_window_reads_as_running_throughout(self):
+        aggregator = _util._DayAggregator(self.week)
+        aggregator.add(
+            9, -1, queue_key="2026-08-20",
+            run_from_day=-1, started_day=-1, end_day=self.D,
+            count=3, ever_ran=True, has_end=True,
+        )
+
+        carry = self._carry(self._payload(aggregator))
+
+        assert carry[_util.WINDOW_START_DAY]["active"] == 3
+        for day in self.week.days:
+            assert (carry[day]["placed"], carry[day]["active"]) == (0, 3), day
+
+    def test_a_job_that_ended_before_the_window_holds_no_place(self):
+        aggregator = _util._DayAggregator(self.week)
+        aggregator.add(
+            9, -1, queue_key="2026-08-20",
+            run_from_day=-1, started_day=-1, end_day=-1,
+            count=3, ever_ran=True, has_end=True,
+        )
+
+        payload = self._payload(aggregator)
+
+        assert payload["carry"] == []
+        assert payload["activity"] == []
+
+    def test_a_job_inside_the_window_is_reported_as_before(self):
+        aggregator = _util._DayAggregator(self.week)
+        days = self.week.days
+        aggregator.add(9, 1, queue_key=days[1], run_from_day=2, started_day=2, end_day=4, count=4)
+
+        payload = self._payload(aggregator)
+
+        activity = {row["day"]: row for row in payload["activity"]}
+        assert activity[days[2]]["started"] == 4
+        assert activity[days[4]]["completed"] == 4
+
+        (cohort,) = payload["cohorts"]
+        assert cohort["day"] == days[1]
+        assert cohort["asOf"][days[1]] == (4, 0, 0, 0)
+        assert cohort["asOf"][days[3]] == (0, 4, 0, 0)
+        assert cohort["asOf"][days[4]] == (0, 0, 4, 0)
+
+        carry = self._carry(payload)
+        assert (carry[days[1]]["placed"], carry[days[1]]["active"]) == (4, 0)
+        assert (carry[days[3]]["placed"], carry[days[3]]["active"]) == (0, 4)
+        assert days[4] not in carry, "terminal from its end day on"
+        assert payload["counted"] == 4
+        assert payload["placedBeforeWindow"] == 0
+
+    def test_two_windows_agree_where_they_meet(self):
+        # One job seen from the week it was placed in and from the week after:
+        # placed on the last day of A, started and finished inside B.
+        week_a = _util.build_calendar_for_range("2026-08-21", "2026-08-28")
+        week_b = self.week
+        placed = "2026-08-27"
+
+        in_a = _util._DayAggregator(week_a)
+        in_a.add(
+            9, 6, queue_key=placed,
+            run_from_day=len(week_a), started_day=len(week_a), end_day=len(week_a),
+            count=1, ever_ran=True, has_end=True,
+        )
+        in_b = _util._DayAggregator(week_b)
+        in_b.add(9, -1, queue_key=placed, run_from_day=1, started_day=1, end_day=3, count=1)
+
+        payload_a = self._payload(in_a)
+        payload_b = self._payload(in_b)
+
+        # A's last-day census is B's opening census.
+        carry_a = self._carry(payload_a)
+        carry_b = self._carry(payload_b)
+        assert carry_a[week_a.days[-1]] == {"cluster": 9, "day": week_a.days[-1], "placed": 1, "active": 0}
+        assert carry_b[_util.WINDOW_START_DAY] == {"cluster": 9, "day": _util.WINDOW_START_DAY, "placed": 1, "active": 0}
+
+        # Both file it under the same cohort day, and each covers its own days.
+        (cohort_a,) = payload_a["cohorts"]
+        (cohort_b,) = payload_b["cohorts"]
+        assert cohort_a["day"] == cohort_b["day"] == placed
+        assert cohort_a["asOf"] == {placed: (1, 0, 0, 0)}
+        assert cohort_b["asOf"][week_b.days[0]] == (1, 0, 0, 0)
+        assert cohort_b["asOf"][week_b.days[1]] == (0, 1, 0, 0)
+        assert cohort_b["asOf"][week_b.days[3]] == (0, 0, 1, 0)
+
+        # The transition lands in the week it happened, and only there.
+        assert payload_a["activity"] == []
+        assert [row["day"] for row in payload_b["activity"]] == [week_b.days[1], week_b.days[3]]
+
+    def test_a_start_before_the_window_is_running_in_the_cohort_too(self):
+        # The census already knew this (see the running-throughout test); the
+        # cohort's own states have to agree with it, or the same cohort reads
+        # as running in one week and queued in the next.
+        aggregator = _util._DayAggregator(self.week)
+        aggregator.add(
+            9, -1, queue_key="2026-08-20",
+            run_from_day=0, started_day=-1, end_day=3,
+            count=3, ever_ran=True, has_end=True,
+        )
+
+        (cohort,) = self._payload(aggregator)["cohorts"]
+
+        assert cohort["asOf"][self.week.days[0]] == (0, 3, 0, 0)
+        assert cohort["asOf"][self.week.days[2]] == (0, 3, 0, 0)
+        assert cohort["asOf"][self.week.days[3]] == (0, 0, 3, 0)

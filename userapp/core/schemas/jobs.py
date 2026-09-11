@@ -103,7 +103,14 @@ class Cohort(BaseModel):
 
     `asOf` maps a day key to the four-state breakdown [queued, running,
     completed, removed] at the end of that day, for days from the cohort's own
-    queue day forward."""
+    queue day forward.
+
+    `day` may precede the window: a cohort placed before it opened, and still
+    partly open when it did, is reported under its real placement day with
+    `asOf` covering the window's days. Such a row counts only the jobs still open
+    at the window's start -- the window that contains the placement day has the
+    whole cohort -- which is what lets a viewer stitch consecutive windows into
+    one calendar."""
 
     cluster: int
     day: str
@@ -169,8 +176,13 @@ class JobDaySummary(BaseModel):
     activity: list[ActivityRow]
     carry: list[CarryRow]
     sources: JobDaySummarySources
+    # Jobs placed inside the window. Adds up across tiled windows, since a job
+    # is placed on exactly one day.
     counted: int
-    skippedOutsideWindow: int
+    # Jobs placed before the window that were still open when it started. Not
+    # additive across windows: the same long-lived job is here in every window
+    # it outlives.
+    placedBeforeWindow: int
 
 
 class UserRangeRow(BaseModel):
