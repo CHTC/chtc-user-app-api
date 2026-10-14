@@ -22,6 +22,21 @@ from userapp.query_parser import QueryParser
 
 logger = logging.getLogger(__name__)
 
+# Database triggers raise exceptions starting with this marker for rule violations that
+# should be shown to the caller, e.g. "an active user must keep a primary project".
+TRIGGER_RULE_MARKER = "primary_project_rule: "
+
+
+def trigger_error_detail(error: DBAPIError) -> Union[str, None]:
+    """Return the message of a rule-violating trigger exception, or None for any other database error."""
+
+    message = str(error.orig)
+    index = message.find(TRIGGER_RULE_MARKER)
+    if index == -1:
+        return None
+    return message[index + len(TRIGGER_RULE_MARKER):].strip()
+
+
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.wiscmail.wisc.edu")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 
@@ -31,7 +46,10 @@ def with_db_error_handling(func):
             return await func(*args, **kwargs)
         except (DBAPIError, IntegrityError) as e:
             logger.error(f"Database error: {str(e)}")
-            raise HTTPException(status_code=400, detail="Database error occurred, likely due to violation of constraints.")
+            raise HTTPException(
+                status_code=400,
+                detail=trigger_error_detail(e) or "Database error occurred, likely due to violation of constraints.",
+            )
         except ValidationError as e:
             raise HTTPException(status_code=500, detail=f"Data validation error: {str(e)}")
         except HTTPException:
