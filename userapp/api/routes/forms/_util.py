@@ -67,8 +67,6 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
     if user is None:
         raise HTTPException(status_code=404, detail=f"User {user_form.base_form.created_by} not found")
 
-    user.active = True
-
     # Set the users email if not already set
     if user.email1 is None:
         if form.email is None:
@@ -102,6 +100,10 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
         )
         # Grant access to the approved submit nodes via their associated groups
         await _patch_user_submit_nodes(session, user, form.submit_nodes)
+
+    # Activate last: the database refuses to activate a user who has no primary project yet
+    user.active = True
+    await session.flush()
 
     # Try sending the user an email
     try:
