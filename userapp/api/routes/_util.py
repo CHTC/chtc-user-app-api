@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from userapp.core.models.tables import User, UserProject, UserGroup, SubmitNode
@@ -67,22 +67,6 @@ async def _patch_user_submit_nodes(
     await session.flush()
 
 
-async def _demote_other_primary_projects(session: AsyncSession, user_id: int, project_id: int) -> None:
-    """Clear is_primary on the user's memberships in every project other than
-    ``project_id``. Runs on the caller's session, so it commits or rolls back
-    together with the write that makes ``project_id`` the primary project."""
-
-    await session.execute(
-        update(UserProject)
-        .where(
-            UserProject.user_id == user_id,
-            UserProject.project_id != project_id,
-            UserProject.is_primary.is_(True),
-        )
-        .values(is_primary=False)
-    )
-
-
 async def _patch_user_project(
     session: AsyncSession,
     user_id: int,
@@ -104,10 +88,6 @@ async def _patch_user_project(
             status_code=404,
             detail=f"User {user_id} is not a member of project {project_id}",
         )
-
-    # A user has one primary project: making this one primary demotes the others
-    if patch.is_primary:
-        await _demote_other_primary_projects(session, user_id, project_id)
 
     # Iterate set fields and copy native Python values (e.g. Enum members)
     # straight to the ORM row. Avoid model_dump() here: model_dump() runs any
