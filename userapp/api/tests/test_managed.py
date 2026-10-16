@@ -381,3 +381,56 @@ class TestManagedGroupSync:
             existing_admin_client.delete(f"/users/{user_app['id']}")
             existing_admin_client.delete(f"/users/{user_managed['id']}")
 
+
+
+# ---------------------------------------------------------------------------
+# One primary project per user
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("manager_prefix,manager_enum", MANAGERS)
+class TestManagedPrimaryProject:
+    """The sync sets is_primary directly, so the database trigger keeps one primary per user."""
+
+    def test_sync_primary_demotes_other_primary(
+        self, existing_admin_client, project, project_factory, user_factory, manager_prefix, manager_enum
+    ):
+        """Syncing a user in as primary clears their previous primary project."""
+        side_project = project_factory()
+        user = user_factory(0, side_project["id"])
+        try:
+            response = existing_admin_client.put(
+                project_url(manager_prefix, project["id"]),
+                json=[{"user_id": user["id"], "role": RoleEnum.MEMBER.value, "is_primary": True}],
+            )
+            assert response.status_code == 200, response.text
+
+            memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
+            primary_ids = [m["project_id"] for m in memberships if m["is_primary"]]
+            assert primary_ids == [project["id"]]
+            assert side_project["id"] in [m["project_id"] for m in memberships], "old membership must remain"
+        finally:
+            existing_admin_client.delete(f"/users/{user['id']}")
+            existing_admin_client.delete(f"/projects/{side_project['id']}")
+
+    def test_last_sync_wins_across_projects(
+        self, existing_admin_client, project_factory, user_factory, manager_prefix, manager_enum
+    ):
+        """When two projects are synced as primary for one user, the later sync is the one that stays primary."""
+        first = project_factory()
+        second = project_factory()
+        user = user_factory(0, first["id"])
+        try:
+            for project_id in (first["id"], second["id"]):
+                response = existing_admin_client.put(
+                    project_url(manager_prefix, project_id),
+                    json=[{"user_id": user["id"], "role": RoleEnum.MEMBER.value, "is_primary": True}],
+                )
+                assert response.status_code == 200, response.text
+
+            memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
+            primary_ids = [m["project_id"] for m in memberships if m["is_primary"]]
+            assert primary_ids == [second["id"]]
+        finally:
+            existing_admin_client.delete(f"/users/{user['id']}")
+            existing_admin_client.delete(f"/projects/{first['id']}")
+            existing_admin_client.delete(f"/projects/{second['id']}")

@@ -10,9 +10,12 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
 from pydantic_settings import BaseSettings
+from sqlalchemy.exc import DBAPIError
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from userapp.api.routes import all_routers
+from userapp.api.util import trigger_error_detail
 from userapp.db import (
     connect_engine,
     dispose_engine
@@ -99,6 +102,14 @@ def create_app() -> FastAPI:
         if db_session:
             await db_session.commit()
         return response
+
+    @app.exception_handler(DBAPIError)
+    async def rule_violation_handler(request: Request, exc: DBAPIError):
+        """Routes that write without the generic db error handling still report trigger rule violations as a 400."""
+        detail = trigger_error_detail(exc)
+        if detail is None:
+            return JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+        return JSONResponse({"detail": detail}, status_code=400)
 
     for router in all_routers:
         app.include_router(router)

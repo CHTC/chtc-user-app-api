@@ -102,17 +102,59 @@ class TestPatchUserProject:
         membership = next(m for m in get_resp.json() if m["id"] == user["id"])
         assert membership["role"] == RoleEnum.MEMBER.value
 
-    def test_patch_is_primary(self, existing_admin_client, user, url_for):
-        """Updating is_primary persists."""
+    def test_patch_is_primary_false_rejected_for_active_user(self, existing_admin_client, user, url_for):
+        """An active user's only primary project can't be unset."""
         project_id = user["projects"][0]["project_id"]
-        # User was created with their primary project = this project, so they're
-        # already is_primary=True. Flip it off.
+        assert user["active"] is True
+
+        response = existing_admin_client.patch(
+            url_for(user["id"], project_id),
+            json={"is_primary": False},
+        )
+        assert response.status_code == 400, response.text
+        assert "primary project" in response.json()["detail"].lower()
+
+        memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
+        assert [m["project_id"] for m in memberships if m["is_primary"]] == [project_id]
+
+    def test_patch_is_primary_false_allowed_for_inactive_user(self, existing_admin_client, user, url_for):
+        """Inactive users may have no primary project."""
+        project_id = user["projects"][0]["project_id"]
+        assert existing_admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
+
         response = existing_admin_client.patch(
             url_for(user["id"], project_id),
             json={"is_primary": False},
         )
         assert response.status_code == 200, response.text
         assert response.json()["is_primary"] is False
+
+    def test_patch_is_primary_true_demotes_other_primary(
+        self, existing_admin_client, user, project_factory, url_for
+    ):
+        """Making a project primary clears is_primary on the user's other project."""
+        old_primary_id = user["projects"][0]["project_id"]
+        new_project = project_factory()
+        try:
+            add_resp = existing_admin_client.post(
+                f"/projects/{new_project['id']}/users",
+                json={"user_id": user["id"], "is_primary": False, "role": RoleEnum.MEMBER.value},
+            )
+            assert add_resp.status_code == 201, add_resp.text
+
+            response = existing_admin_client.patch(
+                url_for(user["id"], new_project["id"]),
+                json={"is_primary": True},
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["is_primary"] is True
+
+            memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
+            primary_ids = [m["project_id"] for m in memberships if m["is_primary"]]
+            assert primary_ids == [new_project["id"]]
+            assert old_primary_id in [m["project_id"] for m in memberships], "old project membership must remain"
+        finally:
+            existing_admin_client.delete(f"/projects/{new_project['id']}")
 
     def test_patch_managed_by(self, existing_admin_client, user, url_for):
         """Updating managed_by persists and is returned with the enum value."""

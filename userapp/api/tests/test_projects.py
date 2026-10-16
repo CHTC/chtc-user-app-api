@@ -195,6 +195,41 @@ class TestProjects:
         user_ids_in_project = [user['id'] for user in project_users]
         assert user['id'] in user_ids_in_project, "The created user should be in the project's users list"
 
+    def test_add_user_to_project_as_primary_demotes_other_primary(self, admin_client, project, user):
+        """Adding a user as primary clears is_primary on their existing primary project."""
+        old_primary_id = user['projects'][0]['project_id']
+
+        response = admin_client.post(
+            f"/projects/{project['id']}/users",
+            json={"user_id": user['id'], "is_primary": True, "role": RoleEnum.MEMBER.value},
+        )
+        assert response.status_code == 201, f"Adding a primary user should return 201, got {response.text}"
+
+        memberships = admin_client.get(f"/users/{user['id']}/projects").json()
+        primary_ids = [m['project_id'] for m in memberships if m['is_primary']]
+        assert primary_ids == [project['id']], "Only the newly added project should be primary"
+        assert old_primary_id in [m['project_id'] for m in memberships], "The old project membership must remain"
+
+    def test_add_user_to_project_failure_does_not_demote_other_primary(self, admin_client, project, user):
+        """If the add fails (already a member), the demote is rolled back with it."""
+        old_primary_id = user['projects'][0]['project_id']
+
+        first = admin_client.post(
+            f"/projects/{project['id']}/users",
+            json={"user_id": user['id'], "is_primary": False, "role": RoleEnum.MEMBER.value},
+        )
+        assert first.status_code == 201, first.text
+
+        duplicate = admin_client.post(
+            f"/projects/{project['id']}/users",
+            json={"user_id": user['id'], "is_primary": True, "role": RoleEnum.MEMBER.value},
+        )
+        assert duplicate.status_code >= 400, "Adding an existing member should fail"
+
+        memberships = admin_client.get(f"/users/{user['id']}/projects").json()
+        primary_ids = [m['project_id'] for m in memberships if m['is_primary']]
+        assert primary_ids == [old_primary_id], "The failed add must not change the existing primary project"
+
     def test_add_user_to_project_default_managed_by(self, admin_client, project, user):
         """Test that adding a user to a project without specifying managed_by defaults to APPLICATION"""
 

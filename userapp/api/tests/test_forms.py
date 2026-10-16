@@ -253,6 +253,71 @@ class TestFormGet:
         assert matching_form["created_by"]["id"] is not None
         assert matching_form["pi_name"] == "John Doe"
 
+    @pytest.mark.parametrize("column, user_field", [
+        ("created_by_name", "name"),
+        ("created_by_netid", "netid"),
+        ("created_by_email1", "email1"),
+    ])
+    def test_admin_can_filter_user_applications_by_requester(
+        self, column: str, user_field: str, user: dict, nonadmin_client: Client, admin_client: Client
+    ):
+        """Admins should be able to filter user applications on the requester's name, netid and email1."""
+
+        # Mark user innactive for testing
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
+        assert create_response.status_code == 201
+        created_form = create_response.json()
+
+        response = admin_client.get("/forms/user-applications", params={column: f"ilike.{user[user_field]}"})
+
+        assert response.status_code == 200, (
+            f"GET /forms/user-applications?{column}=ilike.<value> should return 200, got {response.status_code}: {response.text}"
+        )
+        response_json = response.json()
+        assert any(form["id"] == created_form["id"] for form in response_json), (
+            f"Filtering on {column} should include the created form {created_form['id']}, got {response_json}"
+        )
+
+        # Test users share names, but netid and email1 are unique per user
+        if user_field != "name":
+            assert all(form["created_by"]["id"] == user["id"] for form in response_json), (
+                f"Filtering on {column} should only return forms created by user {user['id']}, got {response_json}"
+            )
+
+    def test_admin_can_search_user_applications_by_requester(
+        self, user: dict, nonadmin_client: Client, admin_client: Client
+    ):
+        """An or= search across the requester columns should match a partial netid and skip the PI name."""
+
+        # Mark user innactive for testing
+        r = admin_client.patch(f"/users/{user['id']}", json={"active": False})
+
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
+        assert create_response.status_code == 201
+        created_form = create_response.json()
+
+        def search(value: str) -> list[dict]:
+            response = admin_client.get(
+                "/forms/user-applications",
+                params={"or": f"(created_by_name.ilike.{value},created_by_netid.ilike.{value},created_by_email1.ilike.{value})"},
+            )
+            assert response.status_code == 200, (
+                f"GET /forms/user-applications with an or= requester search should return 200, got {response.status_code}: {response.text}"
+            )
+            return response.json()
+
+        partial_netid = user["netid"][2:-1]
+        assert any(form["id"] == created_form["id"] for form in search(partial_netid)), (
+            f"Searching for a partial netid ({partial_netid}) should include the created form {created_form['id']}"
+        )
+
+        # The PI name is on the form but is not a requester field
+        assert all(form["id"] != created_form["id"] for form in search("John Doe")), (
+            "Searching for the PI name should not match on the requester columns"
+        )
+
 class TestUserFormPatch:
 
     def test_patch_updates_only_updated_by(
@@ -397,6 +462,33 @@ class TestPreserveExistingData:
         # Check the new projects didn't collide with the old somehow
         assert user_post_approval["projects"][0]["project_id"] != user["projects"][0]["project_id"]
         assert user_post_approval["submit_nodes"][0]["name"] != user["submit_nodes"][0]["name"]
+
+    def test_approve_with_preserve_fails_without_primary_project(
+            self,
+            nonadmin_client: Client,
+            admin_client: Client,
+            project_factory,
+            user: dict,
+    ):
+        """Approving with preserve_existing_data can't activate a user who has no primary project."""
+
+        project_id = user["projects"][0]["project_id"]
+        assert admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
+        unset = admin_client.patch(f"/users/{user['id']}/projects/{project_id}", json={"is_primary": False})
+        assert unset.status_code == 200, unset.text
+
+        create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
+        assert create_response.status_code == 201
+        form_id = create_response.json()["id"]
+
+        approval_project = project_factory()
+        approval = admin_client.patch(
+            f"/forms/user-applications/{form_id}",
+            json={**user_form_approval_data_f(approval_project["id"], []), "status": "APPROVED", "preserve_existing_data": True},
+        )
+        assert approval.status_code == 400, approval.text
+        assert approval.json()["detail"] == "A user must have a primary project before they can be made active"
+        assert admin_client.get(f"/users/{user['id']}").json()["active"] is False
 
     def test_approve_with_preserve_keeps_existing_data(
             self,
