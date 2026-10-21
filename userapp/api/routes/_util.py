@@ -70,7 +70,13 @@ async def _patch_user_submit_nodes(
 async def _demote_other_primary_projects(session: AsyncSession, user_id: int, project_id: int) -> None:
     """Clear is_primary on the user's memberships in every project other than
     ``project_id``. Runs on the caller's session, so it commits or rolls back
-    together with the write that makes ``project_id`` the primary project."""
+    together with the write that makes ``project_id`` the primary project.
+
+    Locks the user row first so concurrent primary changes for the same user
+    serialize; otherwise two requests can each miss the other's uncommitted
+    primary and both commit, leaving two primary projects."""
+
+    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
 
     await session.execute(
         update(UserProject)
