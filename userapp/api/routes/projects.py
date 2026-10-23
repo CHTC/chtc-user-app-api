@@ -16,7 +16,7 @@ from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewS
 from userapp.core.models.tables import Project as ProjectTable, Note as NoteTable, UserNote, User, UserProject
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable
 from userapp.core.schemas.users import UserGet
-from userapp.api.routes._util import _patch_user_project, _demote_other_primary_projects
+from userapp.api.routes._util import _patch_user_project
 
 # Rebuild fields that use forward references to avoid circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
@@ -90,10 +90,6 @@ async def add_user_to_project(project_id: int, user_project: UserProjectPost, se
     existing_user = await get_one_endpoint(session, User, user_project.user_id)
     if existing_user is None:
         raise HTTPException(status_code=404, detail=f"User with id ({user_project.user_id}) not found")
-
-    # A user has one primary project: making this one primary demotes the others
-    if user_project.is_primary:
-        await _demote_other_primary_projects(session, user_project.user_id, project_id)
 
     # Create the mapping
     project_user = UserProjectTableSchema(**{**user_project.model_dump(), 'project_id': project_id})
