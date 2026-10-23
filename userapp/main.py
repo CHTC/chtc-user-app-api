@@ -10,6 +10,7 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
 from pydantic_settings import BaseSettings
+from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -104,12 +105,20 @@ def create_app() -> FastAPI:
         return response
 
     @app.exception_handler(DBAPIError)
-    async def rule_violation_handler(request: Request, exc: DBAPIError):
-        """Routes that write without the generic db error handling still report trigger rule violations as a 400."""
-        detail = trigger_error_detail(exc)
-        if detail is None:
-            return JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+    async def db_error_handler(request: Request, exc: DBAPIError):
+        """Database errors are a 400. Rule violations raised by our triggers say why, the rest stay generic."""
+        logger.error(f"Database error: {str(exc)}")
+        detail = trigger_error_detail(exc) or "Database error occurred, likely due to violation of constraints."
         return JSONResponse({"detail": detail}, status_code=400)
+
+    @app.exception_handler(ValidationError)
+    async def validation_error_handler(request: Request, exc: ValidationError):
+        return JSONResponse({"detail": f"Data validation error: {str(exc)}"}, status_code=500)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error_handler(request: Request, exc: Exception):
+        logger.error("Unexpected error", exc_info=exc)
+        return JSONResponse({"detail": f"An unexpected error occurred: {str(exc)}"}, status_code=500)
 
     for router in all_routers:
         app.include_router(router)

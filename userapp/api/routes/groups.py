@@ -12,7 +12,7 @@ from userapp.query_parser import get_filter_query_params
 from userapp.api.routes.security import check_is_admin
 from userapp.api.routes._util import _patch_user_group
 from userapp.api.util import list_endpoint, get_one_endpoint, create_one_endpoint, update_one_endpoint, list_select_stmt, \
-    delete_one_endpoint, with_db_error_handling
+    delete_one_endpoint
 from userapp.core.schemas.general import Relationship, GroupUserView as GroupUserViewSchema, UserGroupView as UserGroupViewSchema
 from userapp.core.schemas.groups import GroupGet, GroupPost, GroupPatch
 from userapp.core.schemas.users import UserGet
@@ -63,7 +63,6 @@ async def get_group_users(group_id: int, response: Response, page: int = 0, page
     select_stmt = select(GroupUserView).where(GroupUserView.group_id == group_id)
     return await list_select_stmt(session, select_stmt, GroupUserView, response, filter_query_params, page, page_size)
 
-@with_db_error_handling
 @router.post("/{group_id}/users", status_code=201)
 async def add_user_to_group(group_id: int, user: UserGroupPost, session=Depends(session_generator)) -> dict:
     """Add user to a group"""
@@ -73,7 +72,6 @@ async def add_user_to_group(group_id: int, user: UserGroupPost, session=Depends(
     return {"message": "Users added to group successfully"}
 
 
-@with_db_error_handling
 @router.delete("/{group_id}/users/{user_id}", status_code=204)
 async def remove_user_from_group(group_id: int, user_id: int, session=Depends(session_generator)) -> None:
     """Remove user from a group"""
@@ -89,7 +87,6 @@ async def remove_user_from_group(group_id: int, user_id: int, session=Depends(se
         raise HTTPException(status_code=404, detail="User not found in group")
 
 
-@with_db_error_handling
 @router.patch("/{group_id}/users/{user_id}")
 async def patch_user_in_group(
     group_id: int,

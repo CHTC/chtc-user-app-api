@@ -21,7 +21,6 @@ from userapp.core.schemas.user_group import ManagedUserGroupPut
 from userapp.core.schemas.user_project import ManagedUserProjectPut
 from userapp.core.schemas.users import UserGet
 from userapp.api.routes.security import check_is_admin
-from userapp.api.util import with_db_error_handling
 from userapp.db import session_generator
 
 # Rebuild schemas that contain forward references once at import time.
@@ -55,7 +54,6 @@ def create_managed_router(
     #  Projects                                                            #
     # ------------------------------------------------------------------ #
 
-    @with_db_error_handling
     @router.put("/projects/{project_id}/users", response_model=List[JoinedProjectView])
     async def sync_project_users(
         project_id: int,
@@ -164,7 +162,6 @@ def create_managed_router(
     #  Groups                                                              #
     # ------------------------------------------------------------------ #
 
-    @with_db_error_handling
     @router.put("/groups/{group_id}/users", response_model=List[UserGroupView])
     async def sync_group_users(
         group_id: int,
