@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from userapp.api.routes import all_routers
-from userapp.api.util import trigger_error_detail
+from userapp.api.util import user_visible_db_message
 from userapp.db import (
     connect_engine,
     dispose_engine
@@ -106,9 +106,9 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(DBAPIError)
     async def db_error_handler(request: Request, exc: DBAPIError):
-        """Database errors are a 400. Rule violations raised by our triggers say why, the rest stay generic."""
+        """Database errors are a 400. Messages marked user visible, such as trigger rule violations, say why, the rest stay generic."""
         logger.error(f"Database error: {str(exc)}")
-        detail = trigger_error_detail(exc) or "Database error occurred, likely due to violation of constraints."
+        detail = user_visible_db_message(exc) or "Database error occurred, likely due to violation of constraints."
         return JSONResponse({"detail": detail}, status_code=400)
 
     @app.exception_handler(ValidationError)

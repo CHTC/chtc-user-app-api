@@ -4,7 +4,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from starlette.testclient import TestClient
 
-from userapp.api.util import TRIGGER_RULE_MARKER
+from userapp.api.util import USER_VISIBLE_PREFIX
 from userapp.main import create_app
 
 
@@ -30,7 +30,7 @@ def _raise(error: Exception):
 def error_client():
     app = create_app()
     routes = {
-        "/trigger": DBAPIError("stmt", {}, Exception(f"CheckViolationError: {TRIGGER_RULE_MARKER}A user must have a primary project")),
+        "/trigger": DBAPIError("stmt", {}, Exception(f"CheckViolationError: {USER_VISIBLE_PREFIX}A user must have a primary project")),
         "/db": DBAPIError("stmt", {}, Exception("something internal about a table")),
         "/integrity": IntegrityError("stmt", {}, Exception("duplicate key value")),
         "/validation": _validation_error(),

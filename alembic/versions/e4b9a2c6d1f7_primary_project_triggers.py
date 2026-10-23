@@ -16,9 +16,9 @@ down_revision: Union[str, Sequence[str], None] = 'c7d2e4f8a1b6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# The API turns exceptions that start with this marker into a 400 whose detail is
-# the rest of the message (see userapp.api.util.trigger_error_detail).
-MARKER = 'primary_project_rule: '
+# The API returns the rest of the message to the caller as a 400 when a database error
+# contains this prefix (see userapp.api.util.user_visible_db_message).
+MARKER = 'user-visible: '
 
 
 def upgrade() -> None:

@@ -21,19 +21,19 @@ from userapp.query_parser import QueryParser
 
 logger = logging.getLogger(__name__)
 
-# Database triggers raise exceptions starting with this marker for rule violations that
-# should be shown to the caller, e.g. "an active user must keep a primary project".
-TRIGGER_RULE_MARKER = "primary_project_rule: "
+# Database triggers raise exceptions with this prefix on messages that are safe to show the
+# caller, e.g. "an active user must keep a primary project".
+USER_VISIBLE_PREFIX = "user-visible: "
 
 
-def trigger_error_detail(error: DBAPIError) -> Union[str, None]:
-    """Return the message of a rule-violating trigger exception, or None for any other database error."""
+def user_visible_db_message(error: DBAPIError) -> Union[str, None]:
+    """Return the user visible message of a database error, or None for any other database error."""
 
     message = str(error.orig)
-    index = message.find(TRIGGER_RULE_MARKER)
+    index = message.find(USER_VISIBLE_PREFIX)
     if index == -1:
         return None
-    return message[index + len(TRIGGER_RULE_MARKER):].strip()
+    return message[index + len(USER_VISIBLE_PREFIX):].strip()
 
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.wiscmail.wisc.edu")
