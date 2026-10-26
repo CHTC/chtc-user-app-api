@@ -4,14 +4,13 @@ from email.mime.text import MIMEText
 from email.utils import formatdate
 from functools import lru_cache
 import smtplib
-import traceback
 import logging
 import os
 from typing import Any, Callable, TypeVar, Union
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ValidationError
-from sqlalchemy.exc import DBAPIError, IntegrityError
+from pydantic import BaseModel
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import DeclarativeBase
 from starlette.responses import Response
 from sqlalchemy import select, func
@@ -22,31 +21,27 @@ from userapp.query_parser import QueryParser
 
 logger = logging.getLogger(__name__)
 
+# Database triggers raise exceptions with this prefix on messages that are safe to show the
+# caller, e.g. "an active user must keep a primary project".
+USER_VISIBLE_PREFIX = "user-visible: "
+
+
+def user_visible_db_message(error: DBAPIError) -> Union[str, None]:
+    """Return the user visible message of a database error, or None for any other database error."""
+
+    message = str(error.orig)
+    index = message.find(USER_VISIBLE_PREFIX)
+    if index == -1:
+        return None
+    return message[index + len(USER_VISIBLE_PREFIX):].strip()
+
+
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.wiscmail.wisc.edu")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-
-def with_db_error_handling(func):
-    async def wrapper(*args, **kwargs):
-        try:
-            return await func(*args, **kwargs)
-        except (DBAPIError, IntegrityError) as e:
-            logger.error(f"Database error: {str(e)}")
-            raise HTTPException(status_code=400, detail="Database error occurred, likely due to violation of constraints.")
-        except ValidationError as e:
-            raise HTTPException(status_code=500, detail=f"Data validation error: {str(e)}")
-        except HTTPException:
-            # re-throw HTTPExceptions so they can be handled by FastAPI
-            raise
-        except Exception as e:
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-    return wrapper
 
 T = TypeVar("T", bound=BaseModel)
 
 
-@with_db_error_handling
 async def list_select_stmt(
     session,
     select_stmt: Select,
@@ -119,7 +114,6 @@ async def list_endpoint(
     )
 
 
-@with_db_error_handling
 async def get_one_endpoint(session, model: type[DeclarativeBase], model_id: Union[str, int], load_options=None):
     """Generic get one endpoint generator"""
 
@@ -131,7 +125,6 @@ async def get_one_endpoint(session, model: type[DeclarativeBase], model_id: Unio
         raise HTTPException(status_code=404, detail=f"Item not found")
     return result
 
-@with_db_error_handling
 async def create_one_endpoint(session, model: type[DeclarativeBase], item: T, load_options=None):
     """Generic create one endpoint generator"""
 
@@ -146,7 +139,6 @@ async def create_one_endpoint(session, model: type[DeclarativeBase], item: T, lo
 
     return db_item
 
-@with_db_error_handling
 async def update_one_endpoint(session, model: type[DeclarativeBase], model_id: Union[str, int], item: T, load_options=None):
     """Generic update one endpoint generator"""
 
@@ -165,7 +157,6 @@ async def update_one_endpoint(session, model: type[DeclarativeBase], model_id: U
 
     return db_item
 
-@with_db_error_handling
 async def delete_one_endpoint(session, model: type[DeclarativeBase], model_id: Union[str, int]) -> None:
     """Generic delete one endpoint generator"""
 
