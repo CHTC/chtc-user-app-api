@@ -112,6 +112,11 @@ class UserApplicationView(Base):
     position = Column(SQLEnum(PositionEnum, name="position_enum"))
     content = Column(String)  # JSONB stored as text in view
 
+    # From the requester's User row, so the list can be filtered on who submitted it
+    created_by_name = Column(String(255))
+    created_by_netid = Column(String(255))
+    created_by_email1 = Column(String(255))
+
     # Relationships for foreign keys
     created_by_user: Mapped[Optional["User"]] = relationship(
         "User",
