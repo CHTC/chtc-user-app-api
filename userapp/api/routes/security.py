@@ -239,6 +239,24 @@ def create_login_token(expires_delta: timedelta | None = None, **data):
     return encoded_jwt
 
 
+def safe_next_path(next_path: str | None) -> str:
+    """Return next_path if it is a same-site path, otherwise "/".
+
+    Browsers read "//host" as another site, treat "\\" as "/" and drop tabs and
+    newlines, so "//evil.com", "/\\evil.com" and "/\\t/evil.com" all leave the site.
+    """
+
+    if (
+        not next_path
+        or not next_path.startswith("/")
+        or next_path.startswith("//")
+        or "\\" in next_path
+        or any(ord(c) < 0x20 or ord(c) == 0x7f for c in next_path)
+    ):
+        return "/"
+    return next_path
+
+
 def create_state_token(state: str, next_path: str | None = None) -> str:
     """Create a short-lived, signed/encrypted token for the OIDC state value.
 
@@ -353,7 +371,7 @@ async def login_user(request: Request):
 
     # Determine where to return after login. Prefer explicit "next" query
     # parameter, otherwise fall back to the current path.
-    next_path = request.query_params.get("next") or "/"
+    next_path = safe_next_path(request.query_params.get("next"))
 
     # Generate a random state and store an encrypted/signed version in a cookie
     raw_state = str(uuid.uuid4())
@@ -477,12 +495,8 @@ async def oidc_callback(request: Request, response: Response, session=Depends(se
     # Determine where to send the user after login
     next_path = state_payload.get("next_path") if state_payload else None
 
-    # Default to root if we don't have a next_path
-    redirect_target = next_path or "/"
-
-    # Ensure redirect_target is a relative path to avoid open redirects
-    if not redirect_target.startswith("/"):
-        redirect_target = "/" + redirect_target
+    # Checked again here so the redirect stays on this site even if /login changes
+    redirect_target = safe_next_path(next_path)
 
     response = RedirectResponse(url=redirect_target)
 
