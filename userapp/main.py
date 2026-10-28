@@ -9,6 +9,7 @@ import uvicorn
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from pydantic_settings import BaseSettings
 from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
@@ -88,10 +89,22 @@ async def setup_engine(a: FastAPI):
 
 def create_app() -> FastAPI:
 
+    # The API is served behind a path prefix (e.g. /api) that it does not know, so the
+    # docs and the OpenAPI server use relative URLs to stay under whatever prefix that is.
     app = FastAPI(
         lifespan=setup_engine,
-        openapi_prefix="./",
+        servers=[{"url": "."}],
+        docs_url=None,
+        redoc_url=None,
     )
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui_html():
+        return get_swagger_ui_html(openapi_url=f".{app.openapi_url}", title=f"{app.title} - Swagger UI")
+
+    @app.get("/redoc", include_in_schema=False)
+    async def redoc_html():
+        return get_redoc_html(openapi_url=f".{app.openapi_url}", title=f"{app.title} - ReDoc")
 
     @app.middleware("http")
     async def commit_db_session(request: Request, call_next):

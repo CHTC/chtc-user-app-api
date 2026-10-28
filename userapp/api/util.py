@@ -9,6 +9,7 @@ import os
 from typing import Any, Callable, TypeVar, Union
 
 from fastapi import HTTPException
+from fastapi.routing import iter_route_contexts
 from pydantic import BaseModel
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import DeclarativeBase
@@ -168,7 +169,8 @@ async def delete_one_endpoint(session, model: type[DeclarativeBase], model_id: U
     await session.flush()
 
 def route_method_lookup(routes, route, method):
-    for r in routes:
+    # routes is a tree of included routers; iter_route_contexts walks it
+    for r in iter_route_contexts(routes):
         if r.path == route and method in r.methods:
             return True
 

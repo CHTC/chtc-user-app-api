@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from fastapi.routing import iter_route_contexts
 from starlette.requests import Request
 
 from userapp.core.schemas.routes import RouteGet
@@ -18,7 +19,8 @@ router = APIRouter(
 async def get_routes(requests: Request) -> list[RouteGet]:
 
     routes: set[tuple[str, str]] = set()
-    for r in requests.app.routes:
+    # app.routes is a tree of included routers; iter_route_contexts walks it
+    for r in iter_route_contexts(requests.app.routes):
         for method in r.methods:
             routes.add((r.path, method))
 
