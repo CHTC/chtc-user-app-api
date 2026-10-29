@@ -6,6 +6,7 @@ import ipaddress
 from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.routing import iter_route_contexts
 from fastapi.security import HTTPBearer
 import httpx
 from pydantic import BaseModel
@@ -178,8 +179,14 @@ async def get_auth_from_api_token(request: Request, session=Depends(session_gene
     if token.expires_at is not None and token.expires_at < datetime.now():
         return None
 
-    # Check the token has access to this route
-    if (request.method, request.scope.get('route').path) not in set([(p.method.value, p.route) for p in token.permissions]):
+    # Check the token has access to this route. The matched route's own path leaves out
+    # prefixes added by parent routers, so look up its full path in the route tree.
+    route = request.scope.get('route')
+    route_path = next(
+        (rc.path for rc in iter_route_contexts(request.app.routes) if rc.original_route is route),
+        route.path,
+    )
+    if (request.method, route_path) not in set([(p.method.value, p.route) for p in token.permissions]):
         return None
     
     return ApiTokenData(token_id=token.id, is_admin=True)

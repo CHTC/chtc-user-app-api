@@ -117,6 +117,20 @@ class TestTokens:
 
             assert r.status_code == 200
 
+    def test_use_token_on_nested_router_route(self, token, project, token_client: Callable[[str], TestClient], admin_client: TestClient):
+        """Test using token on a route whose prefix comes from a parent router (/managed + /manifest)"""
+
+        r = admin_client.post(
+            f"/tokens/{token['id']}/permissions",
+            json={"route": "/managed/manifest/projects/{project_id}/users", "method": "PUT"},
+        )
+        assert r.status_code == 201, r.text
+
+        with token_client() as client:
+            r = client.put(f"/managed/manifest/projects/{project['id']}/users", json=[])
+
+            assert r.status_code == 200, r.text
+
     def test_use_token_on_variable_route_no_permission(self, token, token_client: Callable[[str], TestClient]):
         """Test using token to authenticate on an unauthed route"""
 
