@@ -23,6 +23,9 @@ PyJWT==2.13.0
 # HTTP Client
 httpx==0.28.1
 
+# Job history (the /jobs routes), read from the access points' htcondordb
+htcondordb==0.19.0
+
 # Configuration
 python-dotenv==1.2.3
 

@@ -9,15 +9,19 @@ what changed is where the numbers come from and who is allowed to see them:
   * Anonymization is gone. It existed so a public site could publish one user's
     jobs; here a user is looking at their own, so real ClusterIds and real batch
     names are exactly what they need. That also removes the two label stores.
-  * condor_q fans out over the submit nodes the owner actually has access to,
-    instead of one hardcoded schedd.
   * Day boundaries are DST-correct (see the note on bucketing below).
 
-Neither source is enough alone. Adstash/Elasticsearch holds one terminal record
-per job (Completed or Removed) and knows nothing about jobs still in the queue;
-condor_q holds the live queue and knows nothing about jobs that already finished.
-A cluster in flight appears in both, split across them, so the two are merged and
-the terminal record wins.
+Both halves of the answer come from htcondordb, the ClassAd database each access
+point runs alongside its schedd. Only ap2001's is asked for now (HTCONDORDB_*
+below); the other APs are not consulted. It holds two tables that matter here:
+
+  history  one terminal record per job (Completed or Removed), append-only and
+           zone-mapped on EnteredHistoryTime, so a time-bounded query only
+           opens the segments that can hold matches.
+  jobs     the live queue, which knows nothing about jobs that already finished.
+
+A cluster in flight appears in both, split across them. The two are read as one
+snapshot (see fetch_live_jobs), so each job lands in exactly one of them.
 
 Windows that tile
 -----------------
@@ -39,18 +43,34 @@ fetch_day_buckets and _DayAggregator for what changed.
 
 Bucketing and DST
 -----------------
-The bakes bucketed with a plain Elasticsearch histogram over a fixed 86400s
-interval plus an offset, and refused to run at all when the window straddled a
-DST transition, because fixed intervals cannot line up with local midnight on a
-23- or 25-hour day. A bake can decline to run; a live endpoint cannot -- a
-rolling 35-day window contains the transition for 35 consecutive days, so that
-rule would break the page for over a month, twice a year.
+The bakes bucketed with a fixed 86400s interval plus an offset, and refused to
+run at all when the window straddled a DST transition, because fixed intervals
+cannot line up with local midnight on a 23- or 25-hour day. A bake can decline to
+run; a live endpoint cannot -- a rolling 35-day window contains the transition
+for 35 consecutive days, so that rule would break the page for over a month,
+twice a year.
 
-So the histograms here are date_histograms carrying an explicit `time_zone`,
-which Elasticsearch aligns to real local days, and every bucket key is resolved
-against boundaries this module computes in the same zone. The one residue is
-that a sub-day bin spanning a DST transition is an hour short or long; that bin
-is still assigned to the day it starts in, which is what the viewer draws.
+So htcondordb is asked for one-hour buckets (time_bucket, which floors to the
+UTC hour), and this module files each hour into the local day and bin that
+contain it. That is exact rather than approximate because every boundary the
+calendar draws -- local midnights and bin starts -- falls on a UTC hour in a zone
+whose offsets are whole hours, as America/Chicago's are; Calendar refuses a zone
+where that does not hold. The one residue is that a sub-day bin spanning a DST
+transition is an hour short or long; that bin is still assigned to the day it
+starts in, which is what the viewer draws.
+
+What it costs
+-------------
+Measured against ap2001 for its busiest owner, about 410k jobs in a 35-day
+window. Grouping by up to three attributes every record carries (ClusterId,
+QDate, EnteredCurrentStatus) is answered from the archive's columns in one to two
+seconds. Anything that touches an attribute only some records carry --
+JobStartDate, JobBatchName, a FILTER predicate -- or a fourth group key, falls to
+a per-record path that took 26 to 28 seconds for the same owner. So the queries
+are shaped around that line: the status split is two WHERE clauses rather than a
+group key, jobs that never started are found by subtraction rather than by
+testing JobStartDate, and only the day summary, which cannot do without start
+times, pays for the slow path once.
 """
 
 import asyncio
@@ -61,30 +81,42 @@ from bisect import bisect_right
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from time import monotonic
-from typing import Any, Awaitable, Callable, Optional
+from time import time as epoch_now
+from typing import Any, Awaitable, Callable, Optional, Sequence
 from zoneinfo import ZoneInfo
 
-import httpx
+import htcondordb
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from userapp.api.util.htcondor_cli import condor_q, cq_quote
 from userapp.core.models.tables import User
-from userapp.core.models.views import UserSubmitView
 
 logger = logging.getLogger(__name__)
 
 # --- Configuration ------------------------------------------------------------
 
-# Adstash. The restash-* rollovers are included by the default index pattern;
-# their overlap with the primaries is negligible.
-ES_HOST = os.environ.get("ES_HOST", "https://elastic-adstash.osg.chtc.io/q")
-ES_INDEX = os.environ.get("ES_INDEX", "adstash-chtc-ap-job-history-*")
-ES_USERNAME = os.environ.get("ES_USERNAME", "")
-ES_PASSWORD = os.environ.get("ES_PASSWORD", "")
-ES_TIMEOUT = float(os.environ.get("ES_TIMEOUT", "60"))
+# ap2001's htcondordb. Addressed by hostname rather than by the IP its collector ad
+# carries: the daemon's TLS certificate is checked against the host in this
+# address, and it names only the hostname. The sock name is fixed on ap2001; on
+# other APs it is generated and changes on restart. Authentication is whatever
+# CONDOR_CONFIG provides -- an IDTOKEN signed by ap2001 in its token directory.
+HTCONDORDB_ADDRESS = os.environ.get(
+    "HTCONDORDB_ADDRESS", "<ap2001.chtc.wisc.edu:9618?sock=htcondordb>"
+)
+# The schedd whose queue and history that database mirrors, for the payload's
+# description of where the numbers came from.
+HTCONDORDB_SCHEDD = os.environ.get("HTCONDORDB_SCHEDD", "ap2001.chtc.wisc.edu")
+HTCONDORDB_TIMEOUT = float(os.environ.get("HTCONDORDB_TIMEOUT", "120"))
+HISTORY_TABLE = "history"
+JOBS_TABLE = "jobs"
 
 CONDOR_POOL = os.environ.get("CONDOR_POOL", "cm.chtc.wisc.edu")
+
+# Width of the time buckets asked of htcondordb. One hour is the narrowest bin
+# the viewer draws, and every local day and bin boundary falls on one (see the
+# module note), so hour buckets file exactly into either.
+BUCKET = "1h"
+BUCKET_SECONDS = 3600
 
 # The zone the calendar is drawn in. Deliberately not the server's own timezone:
 # a container running in UTC would otherwise cut every day six hours early for a
@@ -103,45 +135,31 @@ ALLOWED_BIN_HOURS = (1, 2, 3, 4, 6, 8, 12, 24)
 
 DAY_SECONDS = 86400
 
-# Upper bound on distinct clusters in a window. Exceeding it is an error rather
-# than a silent trim, so a truncated answer never reads as a complete one.
-CLUSTER_LIMIT = 1000
+# How far back to look in history for a job that is also still in the live
+# table. The two are synced from the schedd separately, so a job that has just
+# left the queue can briefly be in both; an hour is far more lag than either
+# sync has.
+LIVE_OVERLAP_SECONDS = 3600
 
-# The live queue is read once per owner and shared by every window that owner is
-# asked about, so it reaches back far enough to serve any window the endpoints
-# accept: a job submitted a year before the oldest allowed start and still idle
-# is in play throughout. condor_q always applies a QDate window of its own, so
-# this is that window's lower edge, counted back from now.
-LIVE_LOOKBACK_DAYS = 365
-LIVE_QUERY_LOOKBACK_DAYS = LIVE_LOOKBACK_DAYS + 366
-LIVE_LIMIT = 500_000
-LIVE_TIMEOUT = float(os.environ.get("CONDOR_Q_TIMEOUT", "180"))
-
-# Every attribute either endpoint reads off a live ad. One list rather than one
-# per endpoint, so the two can share a single condor_q answer.
+# Every attribute either endpoint reads off a live job, in the order they are
+# selected. One list rather than one per endpoint, so the two can share a single
+# read of the queue.
 LIVE_ATTRS = [
-    "ClusterId", "QDate", "JobStatus", "JobStartDate", "EnteredCurrentStatus",
-    "NumJobStarts",
-    # What the supersede check matches on: aggregations give no per-job keys,
-    # so overlap with a terminal record has to be resolved against these.
-    "GlobalJobId",
+    "ClusterId", "ProcId", "QDate", "JobStatus", "JobStartDate", "EnteredCurrentStatus",
     # A cluster still entirely in the queue has no terminal record at all, so
     # this is the only place its batch name can come from.
     "JobBatchName",
 ]
 
-# These aggregations cost seconds of Elasticsearch time and up to minutes of
-# schedd time, and a page refresh asks for the identical window, so an answer is
+# These aggregations cost up to half a minute of htcondordb time for a busy
+# owner, and a page refresh asks for the identical window, so an answer is
 # reused briefly. Set to 0 to disable.
 CACHE_SECONDS = float(os.environ.get("JOB_HISTORY_CACHE_SECONDS", "60"))
 CACHE_MAX_ENTRIES = 64
 
 # The user table is assembled one day at a time rather than as a single query
-# over the whole range. A month-wide terms aggregation over Owner costs about six
-# seconds against CHTC history; the same month issued a day at a time, merged
-# here, costs under three, because the work overlaps and no single search has to
-# scan the whole range. Days also tile an arbitrary range exactly, which whole
-# weeks cannot, and no individual request comes close to ES_TIMEOUT.
+# over the whole range. One day of ap2001's history answers in about a second,
+# and days tile an arbitrary range exactly, which whole weeks cannot.
 #
 # The decomposition only holds because every figure in the table is a sum or a
 # count, which merge across days exactly. It is the reason there is no median
@@ -149,28 +167,27 @@ CACHE_MAX_ENTRIES = 64
 # be added up from partials, and computing them range-wide would cost more than
 # the rest of the table put together.
 #
-# A day that has ended is settled: Adstash may still receive a straggler, but not
+# A day that has ended is settled: history may still receive a straggler, but not
 # enough to be worth re-reading every minute. Ranges overlap constantly, so a
 # cached day is reused by nearly every subsequent range a reader asks for.
 DAY_CACHE_SECONDS_PAST = float(os.environ.get("JOB_DAY_CACHE_SECONDS", "21600"))
 
-# A long range would otherwise open one search per day all at once, which costs
-# Elasticsearch more than it costs this process.
+# A long range would otherwise open one query per day all at once, which costs
+# htcondordb more than it costs this process.
 DAY_FETCH_CONCURRENCY = int(os.environ.get("JOB_DAY_CONCURRENCY", "12"))
-
-# Distinct owners a single day may report. CHTC runs a few hundred in a busy
-# month, so this is headroom rather than a limit anyone should meet; exceeding it
-# is reported to the reader rather than silently trimming the table.
-USER_TERMS_LIMIT = 2000
 
 # Longest range that may be asked for. A year of days still answers, but slowly
 # enough that it is worth making the caller opt into it a quarter at a time.
 MAX_RANGE_DAYS = 366
 
+# JobStatus of a removed job. Every other status in history is counted as
+# completed: a job leaves the queue by finishing or by being removed.
+REMOVED_STATUS = 3
+
 # Terminal state buckets. Hold is deliberately not one of them: the history
-# records carry no NumHolds/LastHoldTime, so a hold count would be a fabrication.
-# Live ads in JobStatus 5 (Held) fold into Queued, and that is logged when it
-# happens.
+# records carry no NumHolds/LastHoldTime for most jobs, so a hold count would be
+# a fabrication. Live jobs in JobStatus 5 (Held) fold into Queued, and that is
+# logged when it happens.
 STATE_QUEUED = 0
 STATE_RUNNING = 1
 STATE_COMPLETED = 2
@@ -200,8 +217,8 @@ WINDOW_START_DAY = "window-start"
 
 # Stand-in for jobs that carry no JobBatchName. They are a real group, not an
 # error, and they get their own bucket so the batch totals still account for
-# every job on the page. Elasticsearch needs a concrete value to bucket them
-# under, and it has to be one no real batch name would collide with.
+# every job on the page. It has to be a value no real batch name would collide
+# with.
 NO_BATCH = "__no_batch__"
 
 
@@ -217,10 +234,9 @@ class Calendar:
     """The window, its day grid, and its sub-day bin grid, all in local time.
 
     Boundaries are built from calendar dates rather than by adding 86400 to the
-    previous one, so a 23- or 25-hour day is the length it really was. Bucket
-    keys and raw timestamps are both resolved against these boundaries by binary
-    search, which stays correct whatever Elasticsearch did with its own bucket
-    alignment.
+    previous one, so a 23- or 25-hour day is the length it really was. Hour
+    buckets and raw timestamps are both resolved against these boundaries by
+    binary search.
     """
 
     def __init__(self, first: date, last: date, bin_hours: int):
@@ -255,11 +271,19 @@ class Calendar:
         ]
         self.total_bins = len(self.bin_boundaries)
 
-        # Bucket key that `"missing": 0` lands in: whichever local day contained
-        # the epoch. Both an absent field and a present-but-zero timestamp end up
-        # there (removed jobs carry CompletionDate 0), so it reads as "no such
-        # transition" rather than as a timestamp outside the window.
-        self.missing_day_key_ms = _midnight(datetime.fromtimestamp(0, TZ).date()) * 1000
+        # Hour buckets file into days and bins exactly only if every boundary is
+        # on the hour. True of any zone whose offsets are whole hours; refused
+        # loudly for one that is not, rather than smearing an hour's jobs across
+        # two days.
+        misaligned = [
+            boundary for boundary in self.bin_boundaries + [self.end_sec]
+            if boundary % BUCKET_SECONDS
+        ]
+        if misaligned:
+            raise HTTPException(
+                status_code=500,
+                detail=f"{TIMEZONE} has boundaries off the hour; job history needs a whole-hour zone",
+            )
 
     def __len__(self) -> int:
         return len(self.days)
@@ -303,22 +327,10 @@ class Calendar:
             return len(self)
         return bisect_right(self.day_boundaries, value) - 1
 
-    def day_index_from_key(self, key_ms: Any) -> int:
-        """Histogram bucket key (epoch millis) -> day index, or -1."""
-        if key_ms is None:
-            return -1
-        return self.day_index(float(key_ms) / 1000)
-
-    def day_index_from_key_clamped(self, key_ms: Any) -> int:
-        """Histogram bucket key (epoch millis) -> day_index_clamped."""
-        if key_ms is None:
-            return -1
-        return self.day_index_clamped(float(key_ms) / 1000)
-
     def day_key(self, seconds: Any) -> Optional[str]:
         """The local calendar date of a timestamp as "YYYY-MM-DD", inside the
         window or not. None for junk, and for the zero that means "no such
-        timestamp" -- which is also where the histograms' `missing: 0` lands."""
+        timestamp"."""
         try:
             value = float(seconds)
         except (TypeError, ValueError):
@@ -327,30 +339,22 @@ class Calendar:
             return None
         return datetime.fromtimestamp(value, TZ).date().isoformat()
 
-    def day_key_from_key(self, key_ms: Any) -> Optional[str]:
-        """Histogram bucket key (epoch millis) -> day_key. The missing bucket's
-        key is local midnight of the epoch's day, which is before the epoch in
-        any zone west of Greenwich and so reads as None here too."""
-        if key_ms is None:
-            return None
-        return self.day_key(float(key_ms) / 1000)
+    def open_inside(self, queued_at: Any, ended_at: Any) -> bool:
+        """Whether a terminal job was open at some point inside the window:
+        placed before it closed, and finished on or after it opened or placed
+        inside it.
 
-    def bin_index_from_key(self, key_ms: Any) -> int:
-        """Histogram bucket key (epoch millis) -> bin index, or -1."""
-        if key_ms is None:
-            return -1
-        return self.bin_index(float(key_ms) / 1000)
-
-    def has_timestamp(self, key_ms: Any) -> bool:
-        """Whether a bucket represents a real timestamp at all.
-
-        The Sankey needs this and the day index cannot answer it: a job that
-        started before the window ran, and flows out of Active, while one that
-        never started flows straight from Placed -- both give a day index of -1.
+        That is the selection that makes windows tile (see the module note). It
+        is applied here, to hour buckets, rather than in the query, because an OR
+        in the WHERE clause cost htcondordb about three seconds for a busy owner
+        and the buckets answer it exactly: the window's edges are on the hour, so
+        an hour bucket is on a side of an edge exactly when its jobs are.
         """
-        if key_ms is None:
+        queued = _as_seconds(queued_at)
+        ended = _as_seconds(ended_at)
+        if queued is None or queued >= self.end_sec:
             return False
-        return float(key_ms) != float(self.missing_day_key_ms)
+        return queued >= self.start_sec or (ended is not None and ended >= self.start_sec)
 
 
 def _check_bin_hours(bin_hours: int) -> None:
@@ -394,383 +398,260 @@ def build_calendar_for_range(start: str, end: str, bin_hours: int = DEFAULT_BIN_
     return Calendar(first, last_exclusive - timedelta(days=1), bin_hours)
 
 
-# --- Elasticsearch ------------------------------------------------------------
+# --- htcondordb ---------------------------------------------------------------
 
 
-def _es_client() -> httpx.AsyncClient:
-    auth = httpx.BasicAuth(ES_USERNAME, ES_PASSWORD) if ES_USERNAME else None
-    return httpx.AsyncClient(base_url=ES_HOST, auth=auth, timeout=ES_TIMEOUT)
+def _query_sync(sql: str, params: Sequence[Any]) -> list[tuple]:
+    """One statement on a connection of its own.
 
-
-async def es_search(client: httpx.AsyncClient, body: dict, attempts: int = 4) -> dict:
-    """POST one search and return the decoded body.
-
-    Only transport failures retry. A 4xx/5xx from Elasticsearch is a real problem
-    -- a bad query, a missing index, expired credentials -- and repeating it just
-    delays the error.
+    The driver blocks, and a connection is not shared across threads, so each
+    query opens one in the worker thread that runs it. Connecting costs about
+    50ms against ap2001, which is noise beside the queries themselves.
     """
-    last_error: Optional[Exception] = None
-    for attempt in range(1, attempts + 1):
-        try:
-            response = await client.post(f"/{ES_INDEX}/_search", json=body, params={"size": 0})
-        except httpx.TransportError as error:
-            last_error = error
-            if attempt == attempts:
-                break
-            backoff = 0.5 * 2 ** (attempt - 1)
-            logger.warning(
-                "Elasticsearch transport error (attempt %d/%d): %s; retrying in %.1fs",
-                attempt, attempts, error, backoff,
-            )
-            await asyncio.sleep(backoff)
+    with htcondordb.connect(HTCONDORDB_ADDRESS, timeout=HTCONDORDB_TIMEOUT) as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
+async def db_query(sql: str, params: Sequence[Any] = ()) -> list[tuple]:
+    """Run one statement against htcondordb off the event loop.
+
+    `?` is the driver's placeholder, and it finds them by scanning the text, so a
+    `?` anywhere else in a statement -- `=?=` included -- is miscounted as one.
+    Test for undefined with isUndefined() instead.
+
+    A failure is a 502: htcondordb is the only source for these numbers, so there
+    is no partial answer to fall back to.
+    """
+    started = monotonic()
+    try:
+        rows = await asyncio.to_thread(_query_sync, sql, params)
+    except htcondordb.Error as error:
+        logger.warning("htcondordb query failed after %.1fs: %s", monotonic() - started, error)
+        raise HTTPException(status_code=502, detail=f"htcondordb query failed: {error}")
+    logger.info("htcondordb: %d rows in %.2fs: %.120s", len(rows), monotonic() - started, sql)
+    return rows
+
+
+# Grouping by these three stays on the archive's columnar path; see "What it
+# costs" in the module note.
+_TERMINAL_KEYS = (
+    f"ClusterId, time_bucket(QDate, '{BUCKET}'), time_bucket(EnteredCurrentStatus, '{BUCKET}')"
+)
+# Start times put a query on the per-record path, so only the day summary, which
+# cannot do without them, asks for these.
+_STARTED_KEYS = (
+    f"ClusterId, JobStatus, time_bucket(QDate, '{BUCKET}'), "
+    f"time_bucket(JobStartDate, '{BUCKET}'), time_bucket(EnteredCurrentStatus, '{BUCKET}')"
+)
+
+
+def _owner_history(owner: str, calendar: Calendar, snapshot: int) -> tuple[str, list[Any]]:
+    """The WHERE clause every per-owner history query shares, and its values.
+
+    The lower bound on EnteredHistoryTime is exact rather than a margin: a job
+    open inside the window finished inside or after it, or was placed inside it,
+    and either way entered history no earlier than the window opened. It is also
+    what lets the archive skip every segment older than the window.
+
+    The upper bound is the moment the live queue was read, so history and the
+    queue describe one instant: a job that left the queue after the read is still
+    counted as live, and not a second time as finished.
+    """
+    return (
+        "Owner == ? && EnteredHistoryTime >= ? && EnteredHistoryTime < ?",
+        [owner, calendar.start_sec, snapshot],
+    )
+
+
+async def fetch_terminal_groups(
+    owner: str, calendar: Calendar, snapshot: int
+) -> dict[tuple[int, bool, int, int], int]:
+    """Finished jobs open inside the window, counted by (cluster, removed,
+    queued hour, ended hour).
+
+    Removed and finished are asked for separately rather than grouped by
+    JobStatus, because a fourth group key falls off the columnar path. The end is
+    EnteredCurrentStatus for both: on a terminal record it is when the job reached
+    that state, and unlike CompletionDate it is set on removed jobs too.
+    """
+    where, params = _owner_history(owner, calendar, snapshot)
+
+    async def one(removed: bool) -> tuple[bool, list[tuple]]:
+        status = f"JobStatus {'==' if removed else '!='} {REMOVED_STATUS}"
+        rows = await db_query(
+            f"SELECT {_TERMINAL_KEYS}, COUNT(*) FROM {HISTORY_TABLE} "
+            f"WHERE {where} && {status} GROUP BY {_TERMINAL_KEYS}",
+            params,
+        )
+        return removed, rows
+
+    groups: dict[tuple[int, bool, int, int], int] = {}
+    for removed, rows in await asyncio.gather(one(True), one(False)):
+        for cluster_id, queued_at, ended_at, count in rows:
+            cluster = _as_int(cluster_id)
+            if cluster is None or not count or not calendar.open_inside(queued_at, ended_at):
+                continue
+            key = (cluster, removed, int(queued_at), int(ended_at))
+            groups[key] = groups.get(key, 0) + count
+    return groups
+
+
+async def fetch_started_groups(
+    owner: str, calendar: Calendar, snapshot: int
+) -> dict[tuple[int, bool, int, int, int], int]:
+    """Finished jobs that ever ran, counted by (cluster, removed, queued hour,
+    started hour, ended hour).
+
+    time_bucket drops a record whose JobStartDate is undefined, so jobs that
+    never ran are not here; never_started recovers them.
+    """
+    where, params = _owner_history(owner, calendar, snapshot)
+    rows = await db_query(
+        f"SELECT {_STARTED_KEYS}, COUNT(*) FROM {HISTORY_TABLE} WHERE {where} GROUP BY {_STARTED_KEYS}",
+        params,
+    )
+    groups: dict[tuple[int, bool, int, int, int], int] = {}
+    for cluster_id, status, queued_at, started_at, ended_at, count in rows:
+        cluster = _as_int(cluster_id)
+        if cluster is None or not count or not calendar.open_inside(queued_at, ended_at):
             continue
-
-        if response.status_code >= 400:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Elasticsearch search failed: {response.status_code} {response.text[:500]}",
-            )
-        return response.json()
-
-    raise HTTPException(status_code=502, detail=f"Elasticsearch unreachable: {last_error}")
+        key = (cluster, _as_int(status) == REMOVED_STATUS, int(queued_at), int(started_at), int(ended_at))
+        groups[key] = groups.get(key, 0) + count
+    return groups
 
 
-def _in_window(field: str, calendar: Calendar) -> dict:
-    """`format` is required: without it Elasticsearch reads bare numbers in a range
-    over a date field as epoch MILLIS whatever the field's own format says, and
-    the window silently matches nothing."""
-    return {
-        "range": {
-            field: {"gte": calendar.start_sec, "lt": calendar.end_sec, "format": "epoch_second"}
-        }
-    }
+def never_started(
+    terminal: dict[tuple[int, bool, int, int], int],
+    started: dict[tuple[int, bool, int, int, int], int],
+) -> dict[tuple[int, bool, int, int], int]:
+    """Finished jobs that never ran, per terminal group: every job in the group
+    less the ones that ran.
 
-
-def _day_histogram(field: str, sub: Optional[dict] = None) -> dict:
-    """Local-day histogram over an epoch-seconds field.
-
-    `missing: 0` funnels an absent value into the same bucket a present-but-zero
-    timestamp already lands in, so both read back as "no such transition".
+    Subtraction rather than a query, because testing JobStartDate for undefined
+    took nearly a minute for a busy owner, and these two queries are already
+    paid for. Both read the same snapshot, so they count the same records; a
+    negative difference could only come from a record ingested between them, and
+    is clamped rather than reported as negative jobs.
     """
-    agg: dict[str, Any] = {
-        "date_histogram": {
-            "field": field,
-            "calendar_interval": "1d",
-            "time_zone": TIMEZONE,
-            "min_doc_count": 1,
-            "missing": 0,
-        }
-    }
-    if sub:
-        agg["aggs"] = sub
-    return agg
+    ran: dict[tuple[int, bool, int, int], int] = {}
+    for (cluster, removed, queued_at, _, ended_at), count in started.items():
+        key = (cluster, removed, queued_at, ended_at)
+        ran[key] = ran.get(key, 0) + count
+    remainder: dict[tuple[int, bool, int, int], int] = {}
+    for key, total in terminal.items():
+        rest = total - ran.get(key, 0)
+        if rest > 0:
+            remainder[key] = rest
+    return remainder
 
 
-def _bin_histogram(field: str, calendar: Calendar) -> dict:
-    """Sub-day histogram at the calendar's bin width, aligned to local time."""
-    return {
-        "date_histogram": {
-            "field": field,
-            "fixed_interval": f"{calendar.bin_hours}h",
-            "time_zone": TIMEZONE,
-            "min_doc_count": 1,
-            "missing": 0,
-        }
-    }
+async def fetch_window_batches(owner: str, calendar: Calendar, snapshot: int) -> list[tuple]:
+    """(cluster, batch name, jobs) from the proc-0 record of every cluster that
+    finished one inside the window.
 
-
-def _cluster_buckets(response: dict) -> list[dict]:
-    """The cluster buckets, refusing a silently truncated answer."""
-    aggregations = response.get("aggregations") or {}
-    cluster = aggregations.get("cluster") or {}
-    dropped = cluster.get("sum_other_doc_count", 0)
-    if dropped:
-        raise HTTPException(
-            status_code=507,
-            detail=(
-                f"This window covers more than {CLUSTER_LIMIT} clusters "
-                f"({dropped} more documents did not fit); ask for a shorter window."
-            ),
-        )
-    return cluster.get("buckets", [])
-
-
-def _matched(response: dict) -> int:
-    total = ((response.get("hits") or {}).get("total")) or 0
-    return total.get("value", 0) if isinstance(total, dict) else int(total)
-
-
-async def fetch_bin_buckets(client: httpx.AsyncClient, owner: str, calendar: Calendar) -> list[dict]:
-    """Per cluster: jobs placed per bin, and terminal ends per bin split by status.
-
-    The union filter matters -- a job placed before the window that ended inside
-    it must still contribute its end. Ends come from EnteredCurrentStatus for
-    both terminal statuses: for a terminal record the current status IS the
-    terminal one, and unlike CompletionDate it is also set on Removed records.
+    One job per cluster rather than all of them: JobBatchName is on only some
+    records, which puts a query over all of them on the per-record path, and
+    condor_submit stamps one name on a whole submission anyway (see
+    resolve_cluster_batches). Proc 0 is the one every cluster has.
     """
-    body = {
-        "size": 0,
-        # Without this the reported total silently caps at 10000, which reads as
-        # if the aggregation only saw 10000 jobs.
-        "track_total_hits": True,
-        "query": {
-            "bool": {
-                # adstash maps these as bare keyword fields, not text with a
-                # .keyword subfield.
-                "filter": [{"term": {"Owner": owner}}],
-                "should": [_in_window("QDate", calendar), _in_window("EnteredCurrentStatus", calendar)],
-                "minimum_should_match": 1,
-            }
-        },
-        "aggs": {
-            "cluster": {
-                "terms": {"field": "ClusterId", "size": CLUSTER_LIMIT},
-                "aggs": {
-                    # size 2 rather than 1 so a cluster whose jobs disagree about
-                    # their batch name is detected instead of silently filed
-                    # under whichever name won. See resolve_cluster_batches.
-                    "batch": {"terms": {"field": "JobBatchName", "size": 2, "missing": NO_BATCH}},
-                    "placed": _bin_histogram("QDate", calendar),
-                    "status": {
-                        "terms": {"field": "Status", "size": 20, "missing": "Unknown"},
-                        "aggs": {"ends": _bin_histogram("EnteredCurrentStatus", calendar)},
-                    },
-                },
-            }
-        },
-    }
-    response = await es_search(client, body)
-    logger.info("Adstash matched %d records in %sms", _matched(response), response.get("took"))
-    return _cluster_buckets(response)
+    where, params = _owner_history(owner, calendar, snapshot)
+    return await db_query(
+        f"SELECT ClusterId, JobBatchName, COUNT(*) FROM {HISTORY_TABLE} "
+        f"WHERE {where} && ProcId == 0 GROUP BY ClusterId, JobBatchName",
+        params,
+    )
 
 
-async def fetch_opening_active(client: httpx.AsyncClient, owner: str, calendar: Calendar) -> dict[int, int]:
-    """Terminal records that were in play when the window opened: placed before
-    it, ended inside or after it. Records with no usable end are excluded --
-    their timeline is unknowable."""
-    body = {
-        "size": 0,
-        "query": {
-            "bool": {
-                "filter": [
-                    {"term": {"Owner": owner}},
-                    {"range": {"QDate": {"lt": calendar.start_sec, "format": "epoch_second"}}},
-                    {"range": {"EnteredCurrentStatus": {"gte": calendar.start_sec, "format": "epoch_second"}}},
-                ]
-            }
-        },
-        "aggs": {"cluster": {"terms": {"field": "ClusterId", "size": CLUSTER_LIMIT}}},
-    }
-    response = await es_search(client, body)
-    return {int(bucket["key"]): bucket["doc_count"] for bucket in _cluster_buckets(response)}
+async def tally_history_batches(
+    tally: dict[int, dict[str, int]], owner: str, window_rows: list[tuple], clusters: set[int]
+) -> None:
+    """Fold the window's proc-0 batch names into `tally`, then look up the rest.
 
-
-def overlap_query(owner: str, calendar: Calendar) -> dict:
-    """Every terminal record of `owner` whose job was open at some point inside
-    the window: placed before the window closed, and finished on or after it
-    opened.
-
-    That is the selection that makes windows tile (see the module note). It
-    contains everything the old "had a transition inside the window" filter
-    did -- a placement or an end inside the window both imply overlap -- and adds
-    the jobs that were placed before the window and finished after it, which are
-    exactly the ones a past window was missing from its end-of-day census.
-
-    A record with no usable end is kept only if it was placed inside the window:
-    its timeline is unknowable, so it counts as a placement and nothing more,
-    which is what the old filter did with it too.
+    A cluster can be in the window without its proc 0: a long cluster whose
+    first job finished before the window opened. Those are asked for by
+    ClusterId, which the archive zone-maps, so the lookup skips straight to the
+    segments that hold them instead of scanning the owner's whole history.
+    Clusters already tallied, from the window or from the live queue, are not
+    asked for again.
     """
-    return {
-        "bool": {
-            # adstash maps these as bare keyword fields, not text with a .keyword
-            # subfield.
-            "filter": [
-                {"term": {"Owner": owner}},
-                {"range": {"QDate": {"lt": calendar.end_sec, "format": "epoch_second"}}},
-            ],
-            "should": [
-                {"range": {"EnteredCurrentStatus": {"gte": calendar.start_sec, "format": "epoch_second"}}},
-                {"range": {"QDate": {"gte": calendar.start_sec, "format": "epoch_second"}}},
-            ],
-            "minimum_should_match": 1,
-        }
-    }
+    for cluster_id, name, count in window_rows:
+        note_batch(tally, cluster_id, name, count)
 
-
-async def fetch_day_buckets(client: httpx.AsyncClient, owner: str, calendar: Calendar) -> list[dict]:
-    """The whole window as one nested aggregation.
-
-    Everything the day summary reports is a group-by, so it is computed
-    server-side rather than by streaming documents. The shape is the joint
-    distribution of (cluster, status, queue day, start day, end day); state as of
-    any day D follows arithmetically from that: terminal if endDay <= D, else
-    running if startDay <= D, else queued.
-
-    The selection is every job open at some point in the window (overlap_query).
-    A job placed inside it gets a cohort of its own; a job placed before it gets a
-    cohort keyed by its real placement day, covering only the window's days; and
-    both contribute to the transition counts and the end-of-day census on the
-    days they were here.
-    """
-    body = {
-        "size": 0,
-        "track_total_hits": True,
-        "query": overlap_query(owner, calendar),
-        "aggs": {
-            "cluster": {
-                "terms": {"field": "ClusterId", "size": CLUSTER_LIMIT},
-                "aggs": {
-                    "batch": {"terms": {"field": "JobBatchName", "size": 2, "missing": NO_BATCH}},
-                    "status": {
-                        "terms": {"field": "Status", "size": 20, "missing": "Unknown"},
-                        "aggs": {
-                            "queueDay": _day_histogram(
-                                "QDate",
-                                {
-                                    "startDay": _day_histogram(
-                                        "JobStartDate",
-                                        {
-                                            # Removed jobs always carry
-                                            # CompletionDate 0, so their end time
-                                            # is EnteredCurrentStatus. Which one
-                                            # is real is decided by the enclosing
-                                            # status bucket; both are collected
-                                            # because a histogram cannot switch
-                                            # fields conditionally.
-                                            "endCompleted": _day_histogram("CompletionDate"),
-                                            "endRemoved": _day_histogram("EnteredCurrentStatus"),
-                                        },
-                                    )
-                                },
-                            )
-                        },
-                    },
-                },
-            }
-        },
-    }
-    response = await es_search(client, body)
-    logger.info("Adstash matched %d records in %sms", _matched(response), response.get("took"))
-    return _cluster_buckets(response)
-
-
-async def drop_superseded_ads(client: httpx.AsyncClient, live_ads: dict[str, dict]) -> int:
-    """Remove live ads that already have a terminal record, in place.
-
-    A job finishing between the two queries would otherwise be counted twice --
-    once as queued, once as completed. Aggregations give counts, not job keys, so
-    the overlap cannot be spotted while folding buckets; instead the (small) set
-    of live ads is checked directly by GlobalJobId. Ads without one are left
-    alone: a duplicate is a better failure than a silently dropped job.
-    """
-    if not live_ads:
-        return 0
-
-    by_global_id: dict[str, str] = {}
-    for key, ad in live_ads.items():
-        if ad.get("GlobalJobId"):
-            by_global_id[str(ad["GlobalJobId"])] = key
-    if not by_global_id:
-        logger.warning("Live ads carry no GlobalJobId; skipping the supersede check.")
-        return 0
-
-    ids = list(by_global_id)
-    chunk_size = 1000  # the terms-query ceiling is 65536; stay well clear
-    dropped = 0
-    for start in range(0, len(ids), chunk_size):
-        chunk = ids[start:start + chunk_size]
-        response = await es_search(
-            client,
-            {"size": len(chunk), "_source": ["GlobalJobId"], "query": {"terms": {"GlobalJobId": chunk}}},
-        )
-        for hit in ((response.get("hits") or {}).get("hits") or []):
-            found = (hit.get("_source") or {}).get("GlobalJobId")
-            key = by_global_id.get(str(found)) if found else None
-            if key is not None and live_ads.pop(key, None) is not None:
-                dropped += 1
-    return dropped
+    missing = {cluster for cluster in clusters if cluster not in tally}
+    if not missing:
+        return
+    rows = await db_query(
+        f"SELECT ClusterId, JobBatchName, COUNT(*) FROM {HISTORY_TABLE} "
+        "WHERE Owner == ? && ProcId == 0 && ClusterId >= ? && ClusterId <= ? "
+        "GROUP BY ClusterId, JobBatchName",
+        [owner, min(missing), max(missing)],
+    )
+    for cluster_id, name, count in rows:
+        if _as_int(cluster_id) in missing:
+            note_batch(tally, cluster_id, name, count)
 
 
 # --- Live queue ---------------------------------------------------------------
 
 
-async def owner_schedds(session, user_id: int) -> list[str]:
-    """Schedds to ask about this owner: the submit nodes their group membership
-    grants them.
+async def query_live_jobs(owner: str) -> tuple[dict[str, dict], list[str], int]:
+    """This owner's live jobs, keyed "<cluster>.<proc>", any errors, and the
+    moment they were read.
 
-    Only names that look like hostnames are usable as a `condor_q -name`; the
-    table also holds entries such as "htc_transfer" that name a service rather
-    than a schedd, and asking for those would just fail.
+    The read time is the snapshot every history query of the same request is
+    bounded by (see _owner_history). Jobs that already have a history record
+    from the last LIVE_OVERLAP_SECONDS are dropped here: the queue and history
+    are synced separately, so a job that has just finished can briefly be in
+    both, and it belongs to history.
+
+    A failure is reported rather than fatal. The live queue is the only source
+    for jobs that have not finished, so losing it means an understatement, not a
+    wrong answer -- and an understated page beats no page at all.
+
+    Not window-specific: the queue is the same queue whichever week is being
+    looked at, so it is read once and narrowed by live_ads_in_window.
     """
-    rows = (await session.execute(
-        select(UserSubmitView.name).where(UserSubmitView.user_id == user_id)
-    )).scalars().all()
-    return sorted({name for name in rows if name and "." in name})
-
-
-async def query_live_ads(schedds: list[str], owner: str) -> tuple[dict[str, dict], list[str]]:
-    """Query every schedd for this owner's live ads, keyed "<schedd>:<cluster>.<proc>".
-
-    Keys are qualified by schedd because condor_q's own keys are unique only
-    within one schedd: two of them can each hold cluster 12 proc 0.
-
-    A schedd that fails is reported rather than fatal. The live queue is the only
-    source for jobs that have not reached a terminal state, so losing one means
-    an understatement, not a wrong answer -- and an understated page beats no
-    page at all when a single AP is down or off VPN.
-
-    Not window-specific: this asks for everything the owner has in the queue back
-    to LIVE_QUERY_LOOKBACK_DAYS, and the caller narrows it to a window with
-    live_ads_in_window. The queue is the same queue whichever week is being
-    looked at, and it is the slow leg of every request, so it is read once.
-    """
-    if not schedds:
-        return {}, ["no submit nodes on record for this user; the live queue was not queried"]
-
-    now = datetime.now(TZ)
-    live_start = now - timedelta(days=LIVE_QUERY_LOOKBACK_DAYS)
-    # A little past now, so an ad queued between building this timestamp and the
-    # schedd answering is not cut off by the window's exclusive end.
-    live_end = now + timedelta(days=1)
-
-    async def query(schedd: str) -> dict[str, dict]:
-        return await condor_q(
-            constraint=f"Owner == {cq_quote(owner)}",
-            attrs=LIVE_ATTRS,
-            start=live_start,
-            end=live_end,
-            pool=CONDOR_POOL,
-            name=schedd,
-            # The API service is not the owner, so its own jobs are not the ones
-            # being asked about.
-            all_users=True,
-            limit=LIVE_LIMIT,
-            timeout=LIVE_TIMEOUT,
+    snapshot = int(epoch_now())
+    try:
+        rows, recent = await asyncio.gather(
+            db_query(
+                f"SELECT {', '.join(LIVE_ATTRS)} FROM {JOBS_TABLE} WHERE Owner == ? && ProcId >= 0",
+                [owner],
+            ),
+            db_query(
+                f"SELECT ClusterId, ProcId FROM {HISTORY_TABLE} "
+                "WHERE Owner == ? && EnteredHistoryTime >= ? && EnteredHistoryTime < ?",
+                [owner, snapshot - LIVE_OVERLAP_SECONDS, snapshot],
+            ),
         )
+    except HTTPException as error:
+        logger.warning("Live queue read from %s failed: %s", HTCONDORDB_SCHEDD, error.detail)
+        return {}, [f"{HTCONDORDB_SCHEDD}: {error.detail}"], snapshot
 
-    results = await asyncio.gather(*(query(schedd) for schedd in schedds), return_exceptions=True)
-
-    ads: dict[str, dict] = {}
-    errors: list[str] = []
-    for schedd, result in zip(schedds, results):
-        if isinstance(result, BaseException):
-            logger.warning("condor_q against %s failed: %s", schedd, result)
-            errors.append(f"{schedd}: {result}")
+    finished = {(_as_int(cluster), _as_int(proc)) for cluster, proc in recent}
+    jobs: dict[str, dict] = {}
+    superseded = 0
+    for row in rows:
+        job = dict(zip(LIVE_ATTRS, row))
+        key = (_as_int(job["ClusterId"]), _as_int(job["ProcId"]))
+        if key in finished:
+            superseded += 1
             continue
-        for key, ad in result.items():
-            ads[f"{schedd}:{key}"] = ad
-    return ads, errors
+        jobs[f"{key[0]}.{key[1]}"] = job
+    if superseded:
+        logger.info("%d live jobs superseded by a history record", superseded)
+    return jobs, [], snapshot
 
 
 def live_ads_in_window(ads: dict[str, dict], calendar: Calendar) -> dict[str, dict]:
-    """The live ads that were open at some point inside the window.
+    """The live jobs that were open at some point inside the window.
 
-    A live ad is open now, so it overlaps any window that closes after it was
-    placed: the only test is QDate before the window's end. An ad placed after a
+    A live job is open now, so it overlaps any window that closes after it was
+    placed: the only test is QDate before the window's end. A job placed after a
     past window closed was not there yet and is left out, which is what keeps a
     past week's census from counting this week's submissions.
 
-    Ads with no readable QDate are kept. Dropping a job for a missing attribute
+    Jobs with no readable QDate are kept. Dropping a job for a missing attribute
     would understate the queue, and the aggregators already treat an unknown
     placement as "before the window".
     """
@@ -782,29 +663,21 @@ def live_ads_in_window(ads: dict[str, dict], calendar: Calendar) -> dict[str, di
     return selected
 
 
-async def fetch_live_ads(
-    client: httpx.AsyncClient, schedds: list[str], owner: str, calendar: Calendar
-) -> tuple[dict[str, dict], list[str]]:
-    """This owner's live ads that overlap the window, with any terminal record
-    that supersedes one already removed.
+async def fetch_live_jobs(owner: str, calendar: Calendar) -> tuple[dict[str, dict], list[str], int]:
+    """This owner's live jobs that overlap the window, any errors, and the
+    snapshot time to bound history by.
 
-    The condor_q fan-out and the supersede check run once per owner and are held
-    for CACHE_SECONDS, then narrowed to the window here. A calendar month asked
-    for as five weekly windows costs one read of the queue rather than five --
-    and the lock inside the cache means the five arriving together still cost one.
+    The read is held for CACHE_SECONDS and narrowed to the window here. A
+    calendar month asked for as five weekly windows costs one read of the queue
+    rather than five -- and the lock inside the cache means the five arriving
+    together still cost one. Every window served from one read shares its
+    snapshot too, so they agree with each other about which jobs had finished.
     """
-    async def build() -> tuple[dict[str, dict], list[str]]:
-        ads, errors = await query_live_ads(schedds, owner)
-        superseded = await drop_superseded_ads(client, ads)
-        if superseded:
-            logger.info("%d live ads superseded by a terminal record", superseded)
-        return ads, errors
-
-    ads, errors = await _cached_in(
-        _live_cache, _live_cache_locks, ("live", owner, tuple(schedds)),
-        CACHE_SECONDS, LIVE_CACHE_MAX_ENTRIES, build,
+    jobs, errors, snapshot = await _cached_in(
+        _live_cache, _live_cache_locks, ("live", owner),
+        CACHE_SECONDS, LIVE_CACHE_MAX_ENTRIES, lambda: query_live_jobs(owner),
     )
-    return live_ads_in_window(ads, calendar), errors
+    return live_ads_in_window(jobs, calendar), errors, snapshot
 
 
 # --- Batch names --------------------------------------------------------------
@@ -1025,17 +898,27 @@ def _zeros(length: int) -> array:
     return array("q", bytes(8 * length))
 
 
-def _schedd_summary(schedds: list[str]) -> str:
-    """One-line description of who was asked, for the prose the viewer prints.
+def _sources(live_jobs: int, errors: list[str]) -> dict:
+    """Where the numbers came from, under the keys the viewer already reads.
 
-    Never an empty string: the shared schema base coerces "" to None, and the
-    viewer reads this field as text.
+    `adstash` and `condorQ` are names from when the two halves came from
+    Elasticsearch and condor_q. They are kept because they are the viewer's wire
+    contract; both halves now come from the same htcondordb.
     """
-    return ", ".join(schedds) if schedds else "no submit node on record"
+    return {
+        "adstash": {"host": HTCONDORDB_ADDRESS, "index": HISTORY_TABLE},
+        "condorQ": {
+            "pool": CONDOR_POOL,
+            "schedd": HTCONDORDB_SCHEDD,
+            "schedds": [HTCONDORDB_SCHEDD],
+            "liveAds": live_jobs,
+            "errors": errors,
+        },
+    }
 
 
 async def build_job_series(
-    owner: str, schedds: list[str], days_back: int, bin_hours: int,
+    owner: str, days_back: int, bin_hours: int,
     start: Optional[str] = None, end: Optional[str] = None,
 ) -> dict:
     """Per-cluster placements and terminal transitions, binned across the window.
@@ -1044,6 +927,8 @@ async def build_job_series(
     census of any day needs: of every job in play that day (active when it
     opened, plus placed so far), how many are still active, completed, or
     removed. The day slicing, running sums and percentages are the client's.
+
+    Needs no start times, so every history query here stays on the fast path.
     """
     calendar = (
         build_calendar_for_range(start, end, bin_hours)
@@ -1064,64 +949,43 @@ async def build_job_series(
             }
         return entry
 
-    async with _es_client() as client:
-        # Independent of each other, so they run together: the live queue is the
-        # slowest leg by far and there is no reason for Adstash to wait on it.
-        (live_ads, live_errors), opening, cluster_buckets = await asyncio.gather(
-            fetch_live_ads(client, schedds, owner, calendar),
-            fetch_opening_active(client, owner, calendar),
-            fetch_bin_buckets(client, owner, calendar),
-        )
+    # The queue first: its read time is the snapshot history is bounded by.
+    live_jobs, live_errors, snapshot = await fetch_live_jobs(owner, calendar)
+    terminal, batch_rows = await asyncio.gather(
+        fetch_terminal_groups(owner, calendar, snapshot),
+        fetch_window_batches(owner, calendar, snapshot),
+    )
 
-    # 1. Live queue: the only source for jobs with no terminal record yet.
-    for ad in live_ads.values():
-        cluster = _as_int(ad.get("ClusterId"))
+    # 1. Live queue: the only source for jobs that have not finished.
+    for job in live_jobs.values():
+        cluster = _as_int(job.get("ClusterId"))
         if cluster is None:
             continue
-        note_batch(batch_tally, cluster, ad.get("JobBatchName"), 1)
+        note_batch(batch_tally, cluster, job.get("JobBatchName"), 1)
         entry = series_for(cluster)
-        placed_bin = calendar.bin_index(ad.get("QDate"))
-        queued_at = _as_seconds(ad.get("QDate"))
+        placed_bin = calendar.bin_index(job.get("QDate"))
+        queued_at = _as_seconds(job.get("QDate"))
         if placed_bin >= 0:
             entry["placed"][placed_bin] += 1
         elif queued_at is not None and queued_at < calendar.start_sec:
             # Placed before the window and still live now: in play throughout.
             entry["openingActive"] += 1
 
-    # 2. Terminal records already in play when the window opened.
-    for cluster, count in opening.items():
-        series_for(cluster)["openingActive"] += count
-
-    # 3. Terminal records: placements and ends per bin.
-    unexpected: set[str] = set()
-    for bucket in cluster_buckets:
-        cluster = _as_int(bucket["key"])
-        if cluster is None:
-            continue
-        for batch_bucket in (bucket.get("batch") or {}).get("buckets", []):
-            note_batch(batch_tally, cluster, batch_bucket["key"], batch_bucket["doc_count"])
+    # 2. Finished jobs. Every group was open inside the window, so one placed
+    #    before it finished inside or after it, and was in play when it opened.
+    for (cluster, removed, queued_at, ended_at), count in terminal.items():
         entry = series_for(cluster)
-        for placed_bucket in (bucket.get("placed") or {}).get("buckets", []):
-            placed_bin = calendar.bin_index_from_key(placed_bucket["key"])
-            if placed_bin >= 0:
-                entry["placed"][placed_bin] += placed_bucket["doc_count"]
-        for status_bucket in (bucket.get("status") or {}).get("buckets", []):
-            status = str(status_bucket["key"])
-            if status == "Completed":
-                target = entry["completed"]
-            elif status == "Removed":
-                target = entry["removed"]
-            else:
-                unexpected.add(status)
-                continue
-            for end_bucket in (status_bucket.get("ends") or {}).get("buckets", []):
-                end_bin = calendar.bin_index_from_key(end_bucket["key"])
-                if end_bin >= 0:
-                    target[end_bin] += end_bucket["doc_count"]
-    if unexpected:
-        logger.warning("Unexpected terminal statuses ignored: %s", ", ".join(sorted(unexpected)))
+        if queued_at < calendar.start_sec:
+            entry["openingActive"] += count
+        else:
+            entry["placed"][calendar.bin_index(queued_at)] += count
+        end_bin = calendar.bin_index(ended_at)
+        if end_bin >= 0:
+            (entry["removed"] if removed else entry["completed"])[end_bin] += count
 
-    # 4. Publish, largest cluster first so batch membership is built in a
+    await tally_history_batches(batch_tally, owner, batch_rows, {key[0] for key in terminal})
+
+    # 3. Publish, largest cluster first so batch membership is built in a
     #    deterministic order, then keyed by cluster for the viewer's picker.
     batch_of = resolve_cluster_batches(batch_tally)
     ranked = [
@@ -1164,16 +1028,7 @@ async def build_job_series(
         "binsPerDay": calendar.bins_per_day,
         "series": series,
         "batches": build_batch_list(members),
-        "sources": {
-            "adstash": {"host": ES_HOST, "index": ES_INDEX},
-            "condorQ": {
-                "pool": CONDOR_POOL,
-                "schedd": _schedd_summary(schedds),
-                "schedds": schedds,
-                "liveAds": len(live_ads),
-                "errors": live_errors,
-            },
-        },
+        "sources": _sources(len(live_jobs), live_errors),
     }
 
 
@@ -1589,7 +1444,7 @@ class _DayAggregator:
 
 
 async def build_job_day_summary(
-    owner: str, schedds: list[str], days_back: int,
+    owner: str, days_back: int,
     start: Optional[str] = None, end: Optional[str] = None,
 ) -> dict:
     """Per-day cohort censuses, transition counts and flow edges for the window.
@@ -1597,6 +1452,12 @@ async def build_job_day_summary(
     Fully pre-aggregated: for every (cluster, queue-day) cohort this stores the
     four-state breakdown as of the end of every later day, so the client does no
     per-job arithmetic however many jobs the window holds.
+
+    The joint distribution of (cluster, status, queue hour, start hour, end hour)
+    is everything this needs: state as of any day D follows arithmetically from
+    it -- terminal if the end is on or before D, else running if the start is,
+    else queued. Asking for start hours is the one slow query in this module (see
+    "What it costs"); the others run alongside it.
     """
     calendar = (
         build_calendar_for_range(start, end, DEFAULT_BIN_HOURS)
@@ -1605,119 +1466,93 @@ async def build_job_day_summary(
     )
     aggregator = _DayAggregator(calendar)
 
-    async with _es_client() as client:
-        (live_ads, live_errors), cluster_buckets = await asyncio.gather(
-            fetch_live_ads(client, schedds, owner, calendar),
-            fetch_day_buckets(client, owner, calendar),
-        )
+    # The queue first: its read time is the snapshot history is bounded by.
+    live_jobs, live_errors, snapshot = await fetch_live_jobs(owner, calendar)
+    terminal, started, batch_rows = await asyncio.gather(
+        fetch_terminal_groups(owner, calendar, snapshot),
+        fetch_started_groups(owner, calendar, snapshot),
+        fetch_window_batches(owner, calendar, snapshot),
+    )
 
-    # 1. Terminal records.
-    leaf_buckets = 0
-    unexpected: set[str] = set()
-    for cluster_bucket in cluster_buckets:
-        cluster = _as_int(cluster_bucket["key"])
-        if cluster is None:
-            continue
-        for batch_bucket in (cluster_bucket.get("batch") or {}).get("buckets", []):
-            note_batch(aggregator.batch_tally, cluster, batch_bucket["key"], batch_bucket["doc_count"])
-
-        for status_bucket in (cluster_bucket.get("status") or {}).get("buckets", []):
-            status = str(status_bucket["key"])
-            removed = status == "Removed"
-            if status not in ("Removed", "Completed"):
-                unexpected.add(status)
-
-            for queue_bucket in (status_bucket.get("queueDay") or {}).get("buckets", []):
-                queue_day = calendar.day_index_from_key(queue_bucket["key"])
-                queue_key = calendar.day_key_from_key(queue_bucket["key"])
-                for start_bucket in (queue_bucket.get("startDay") or {}).get("buckets", []):
-                    # Clamped: a start after the window closed must read as
-                    # "queued throughout", not as "running since before it".
-                    start_day = calendar.day_index_from_key_clamped(start_bucket["key"])
-                    # Distinguishes "started before the window" from "never
-                    # started": both give -1, but only the first occupied Active.
-                    ever_ran = calendar.has_timestamp(start_bucket["key"])
-                    # Removed jobs carry CompletionDate 0, so their end time
-                    # lives in EnteredCurrentStatus; the status bucket decides
-                    # which branch is the real one.
-                    end_agg = start_bucket.get("endRemoved" if removed else "endCompleted") or {}
-
-                    for end_bucket in end_agg.get("buckets", []):
-                        leaf_buckets += 1
-                        aggregator.add(
-                            cluster,
-                            queue_day,
-                            queue_key=queue_key,
-                            # A job that started before the window was running
-                            # from its first day. Left at -1 it would be painted
-                            # queued, and a cohort's queued/running split would
-                            # disagree between a window and the one before it.
-                            run_from_day=0 if ever_ran and start_day < 0 else start_day,
-                            started_day=start_day,
-                            end_day=calendar.day_index_from_key_clamped(end_bucket["key"]),
-                            end_state=STATE_REMOVED if removed else STATE_COMPLETED,
-                            count=end_bucket["doc_count"],
-                            ever_ran=ever_ran,
-                            has_end=calendar.has_timestamp(end_bucket["key"]),
-                        )
-    logger.info("Folded %d leaf buckets", leaf_buckets)
-    if unexpected:
-        logger.warning(
-            "Statuses treated as completed: %s. Only Completed and Removed are modelled.",
-            ", ".join(sorted(unexpected)),
-        )
-
-    # 2. Whatever is still only in the queue.
-    for ad in live_ads.values():
-        cluster = _as_int(ad.get("ClusterId"))
-        if cluster is None:
-            continue
-        status = _as_int(ad.get("JobStatus"))
-        if status == 5:
-            aggregator.held_live += 1
-        started_at = _as_seconds(ad.get("JobStartDate"))
-        # Clamped for the same reason as the terminal records: a past window
-        # can hold an ad that only started after it closed.
-        started_day = calendar.day_index_clamped(started_at)
-        note_batch(aggregator.batch_tally, cluster, ad.get("JobBatchName"), 1)
+    # 1. Finished jobs that ran.
+    for (cluster, removed, queued_at, started_at, ended_at), count in started.items():
+        # Clamped: a start after the window closed must read as "queued
+        # throughout", not as "running since before it".
+        start_day = calendar.day_index_clamped(started_at)
         aggregator.add(
             cluster,
-            calendar.day_index(ad.get("QDate")),
-            queue_key=calendar.day_key(ad.get("QDate")),
-            # Only a Running ad (JobStatus 2) is actually running; Idle and Held
-            # both read as Queued. One that started before the window has been
-            # running since its first day.
+            calendar.day_index(queued_at),
+            queue_key=calendar.day_key(queued_at),
+            # A job that started before the window was running from its first
+            # day. Left at -1 it would be painted queued, and a cohort's
+            # queued/running split would disagree between a window and the one
+            # before it.
+            run_from_day=0 if start_day < 0 else start_day,
+            started_day=start_day,
+            end_day=calendar.day_index_clamped(ended_at),
+            end_state=STATE_REMOVED if removed else STATE_COMPLETED,
+            count=count,
+            ever_ran=True,
+            has_end=True,
+        )
+
+    # 2. Finished jobs that never ran: removed straight out of the queue, the
+    #    "skip Active" edge of the Sankey.
+    for (cluster, removed, queued_at, ended_at), count in never_started(terminal, started).items():
+        aggregator.add(
+            cluster,
+            calendar.day_index(queued_at),
+            queue_key=calendar.day_key(queued_at),
+            run_from_day=-1,
+            started_day=-1,
+            end_day=calendar.day_index_clamped(ended_at),
+            end_state=STATE_REMOVED if removed else STATE_COMPLETED,
+            count=count,
+            ever_ran=False,
+            has_end=True,
+        )
+
+    # 3. Whatever is still only in the queue.
+    for job in live_jobs.values():
+        cluster = _as_int(job.get("ClusterId"))
+        if cluster is None:
+            continue
+        status = _as_int(job.get("JobStatus"))
+        if status == 5:
+            aggregator.held_live += 1
+        started_at = _as_seconds(job.get("JobStartDate"))
+        # Clamped for the same reason as the finished jobs: a past window can
+        # hold a job that only started after it closed.
+        started_day = calendar.day_index_clamped(started_at)
+        note_batch(aggregator.batch_tally, cluster, job.get("JobBatchName"), 1)
+        aggregator.add(
+            cluster,
+            calendar.day_index(job.get("QDate")),
+            queue_key=calendar.day_key(job.get("QDate")),
+            # Only a Running job (JobStatus 2) is actually running; Idle and
+            # Held both read as Queued. One that started before the window has
+            # been running since its first day.
             run_from_day=max(started_day, 0) if status == 2 else -1,
             started_day=started_day,
             end_day=-1,
-            # A live ad knows whether it ever ran even when the start fell before
-            # the window, which the terminal records cannot say as precisely.
+            # A live job knows whether it ever ran even when the start fell
+            # before the window.
             ever_ran=bool(started_at and started_at > 0),
         )
     if aggregator.held_live:
         logger.warning(
-            "%d live ads are Held (JobStatus 5); counted as Queued because the history "
+            "%d live jobs are Held (JobStatus 5); counted as Queued because the history "
             "records carry no hold data to pair them with.", aggregator.held_live,
         )
 
-    return aggregator.to_payload(
-        owner,
-        {
-            "adstash": {
-                "host": ES_HOST,
-                "index": ES_INDEX,
-                "terminalRecords": aggregator.counted + aggregator.placed_before_window - len(live_ads),
-            },
-            "condorQ": {
-                "pool": CONDOR_POOL,
-                "schedd": _schedd_summary(schedds),
-                "schedds": schedds,
-                "liveAds": len(live_ads),
-                "stillQueued": len(live_ads),
-                "errors": live_errors,
-            },
-        },
+    await tally_history_batches(aggregator.batch_tally, owner, batch_rows, {key[0] for key in terminal})
+
+    sources = _sources(len(live_jobs), live_errors)
+    sources["adstash"]["terminalRecords"] = (
+        aggregator.counted + aggregator.placed_before_window - len(live_jobs)
     )
+    sources["condorQ"]["stillQueued"] = len(live_jobs)
+    return aggregator.to_payload(owner, sources)
 
 
 # --- A range of days, by user -------------------------------------------------
@@ -1767,10 +1602,9 @@ def range_days(start: date, end: date) -> list[date]:
     """Every day in a half-open range.
 
     The day, not the week, is the unit this endpoint queries and caches. Days
-    tile an arbitrary range exactly, which whole weeks cannot, and they are
-    cheaper: one day of CHTC history answers in a few hundred milliseconds, so a
-    month issued a day at a time and merged costs about a third of what the same
-    month costs as one query, and never comes close to ES_TIMEOUT.
+    tile an arbitrary range exactly, which whole weeks cannot, and one day of
+    ap2001's history answers in about a second, so no single query comes close to
+    HTCONDORDB_TIMEOUT however long the range.
     """
     return [start + timedelta(days=index) for index in range((end - start).days)]
 
@@ -1789,85 +1623,73 @@ def day_cache_ttl(day: date) -> float:
     return DAY_CACHE_SECONDS_PAST if ended else CACHE_SECONDS
 
 
-def _user_day_body(start_sec: int, end_sec: int) -> dict:
-    """Every user's totals for one day, in one aggregation.
-
-    Sums and counts only, deliberately. Each of these merges across days by
-    addition, which is what lets a range be assembled from its days; a percentile
-    or a cardinality would not, and would have to be paid for range-wide.
-
-    `held` tests for the presence of NumHolds rather than for a positive value:
-    HTCondor only writes the attribute onto a record that was actually held, so
-    the field existing IS the condition, and `exists` is cheaper than a range.
-    """
-    return {
-        "size": 0,
-        "track_total_hits": False,
-        "query": {
-            "bool": {
-                "filter": [
-                    {
-                        "range": {
-                            "EnteredCurrentStatus": {
-                                "gte": start_sec, "lt": end_sec, "format": "epoch_second",
-                            }
-                        }
-                    }
-                ]
-            }
-        },
-        "aggs": {
-            "user": {
-                "terms": {"field": "Owner", "size": USER_TERMS_LIMIT, "order": {"_count": "desc"}},
-                "aggs": {
-                    "removed": {"filter": {"term": {"Status": "Removed"}}},
-                    "held": {"filter": {"exists": {"field": "NumHolds"}}},
-                    "failed": {
-                        "filter": {
-                            "bool": {
-                                "must": [{"exists": {"field": "ExitCode"}}],
-                                "must_not": [{"term": {"ExitCode": 0}}],
-                            }
-                        }
-                    },
-                    "retried": {"filter": {"range": {"NumJobStarts": {"gt": 1}}}},
-                    # Slot time is wall time already multiplied by the cores the
-                    # job provisioned, and it is written on every record, so the
-                    # core-hours column costs a plain sum instead of a script.
-                    "slotSeconds": {"sum": {"field": "CumulativeSlotTime"}},
-                    "wallSeconds": {"sum": {"field": "RemoteWallClockTime"}},
-                    "userCpu": {"sum": {"field": "RemoteUserCpu"}},
-                    "sysCpu": {"sum": {"field": "RemoteSysCpu"}},
-                    # Requested against used, for each of the three resources.
-                    # Summed rather than averaged per day: the ratio the table
-                    # shows is one total over another, so a day on which the user
-                    # ran ten jobs cannot weigh as heavily as one on which they
-                    # ran ten thousand.
-                    #
-                    # Memory is in MB and disk in KiB, as HTCondor records them;
-                    # both are converted once, in _user_row.
-                    "memoryUsed": {"sum": {"field": "MemoryUsage"}},
-                    "memoryRequested": {"sum": {"field": "RequestMemory"}},
-                    "diskUsed": {"sum": {"field": "DiskUsage"}},
-                    "diskRequested": {"sum": {"field": "RequestDisk"}},
-                    "cpusRequested": {"sum": {"field": "RequestCpus"}},
-                },
-            }
-        },
-    }
-
-
 # The per-user figures a day contributes. Every one is a count or a sum, both of
 # which add across any number of days exactly -- that is what lets a range be
 # assembled out of cached days. Anything that cannot be merged this way (a median,
 # a percentile, a distinct count) does not belong in this table: it would have to
-# be asked for range-wide, which was measured at about six seconds and costs more
-# than everything here combined.
+# be asked for range-wide, which costs more than everything here combined.
+#
 _DAY_COUNTS = ("removed", "held", "failed", "retried")
 _DAY_SUMS = (
     "slotSeconds", "wallSeconds", "userCpu", "sysCpu",
     "memoryUsed", "memoryRequested", "diskUsed", "diskRequested", "cpusRequested",
 )
+
+# A day is read in three queries rather than one, because htcondordb cannot sum
+# an attribute that some records hold as an expression rather than a number. When
+# it meets one, every owner whose sum touched it comes back merged into a single
+# row with no Owner at all -- and RequestMemory and RequestDisk are expressions
+# on thousands of CHTC's records a day. It happens whenever a query falls to the
+# per-record path, which any FILTER or partly-present attribute forces, so those
+# two are each asked for alone, where a failure costs only that one figure.
+#
+# Every bound shares the day's WHERE clause. EnteredHistoryTime is never before
+# EnteredCurrentStatus on a terminal record, so bounding it by the day's start
+# loses nothing and lets the archive skip every older segment.
+_USER_DAY_WHERE = (
+    f"FROM {HISTORY_TABLE} "
+    "WHERE EnteredHistoryTime >= ? && EnteredCurrentStatus >= ? && EnteredCurrentStatus < ? "
+    "GROUP BY Owner"
+)
+
+# Everything that sums cleanly, in the order fetch_user_day reads it back.
+#
+# `held` counts records carrying a positive NumHolds: HTCondor only writes the
+# attribute onto a job that was actually held. `failed` is a non-zero ExitCode;
+# a removed job has none, and an undefined comparison counts as false.
+#
+# Memory used is summed from ResidentSetSize (KiB) rather than MemoryUsage (MB),
+# which is an expression over ResidentSetSize on these records and so cannot be
+# summed at all. The two differ by MemoryUsage rounding each job up to a whole
+# MB, under a megabyte a job.
+#
+# Slot time is wall time already multiplied by the cores the job provisioned, and
+# it is written on every record, so the core-hours column is a plain sum.
+_USER_DAY_FIELDS = (
+    "removed", "held", "failed", "retried",
+    "slotSeconds", "wallSeconds", "userCpu", "sysCpu", "memoryUsed", "diskUsed", "cpusRequested",
+)
+_USER_DAY_SQL = (
+    "SELECT Owner, COUNT(*), "
+    f"COUNT(*) FILTER (WHERE JobStatus == {REMOVED_STATUS}), "
+    "COUNT(*) FILTER (WHERE NumHolds > 0), "
+    "COUNT(*) FILTER (WHERE ExitCode != 0), "
+    "COUNT(*) FILTER (WHERE NumJobStarts > 1), "
+    "SUM(CumulativeSlotTime), SUM(RemoteWallClockTime), SUM(RemoteUserCpu), SUM(RemoteSysCpu), "
+    "SUM(ResidentSetSize), SUM(DiskUsage), SUM(RequestCpus) "
+    + _USER_DAY_WHERE
+)
+
+# The two requests that can fail, each with the used figure it is compared with.
+# An owner missing from one of these lost that sum to an expression; that day's
+# requested AND used figures for the resource are both left out, so the
+# percentage still compares one set of jobs with itself.
+_USER_DAY_REQUESTS = {
+    "memoryRequested": ("memoryUsed", f"SELECT Owner, SUM(RequestMemory) {_USER_DAY_WHERE}"),
+    "diskRequested": ("diskUsed", f"SELECT Owner, SUM(RequestDisk) {_USER_DAY_WHERE}"),
+}
+
+KIB_PER_MB = 1024
 
 
 def _empty_totals() -> dict[str, float]:
@@ -1884,29 +1706,56 @@ def _merge_totals(running: dict[str, float], day: dict[str, float]) -> None:
         running[name] += day[name]
 
 
-async def fetch_user_day(client: httpx.AsyncClient, day: date) -> dict:
+async def fetch_user_day(day: date) -> dict:
     """One day's per-user totals, keyed by owner.
 
-    Returns the folded numbers rather than raw buckets so the cache holds
-    something small and already shaped, and so a cache hit costs nothing to
-    reuse.
+    Returns the folded numbers rather than raw rows so the cache holds something
+    small and already shaped, and so a cache hit costs nothing to reuse.
+
+    A row with no Owner is htcondordb failing to aggregate some value for the
+    owners merged into it (see _USER_DAY_WHERE). In the main query its jobs are
+    counted as dropped, which marks the range truncated, rather than shown as a
+    user named "None"; in a request query it costs only that resource.
     """
-    body = _user_day_body(_midnight(day), _midnight(day + timedelta(days=1)))
-    response = await es_search(client, body)
-    aggregation = (response.get("aggregations") or {}).get("user") or {}
+    start_sec = _midnight(day)
+    params = [start_sec, start_sec, _midnight(day + timedelta(days=1))]
+    rows, *request_rows = await asyncio.gather(
+        db_query(_USER_DAY_SQL, params),
+        *(db_query(sql, params) for _, sql in _USER_DAY_REQUESTS.values()),
+    )
 
     owners: dict[str, dict[str, float]] = {}
-    for bucket in aggregation.get("buckets", []):
+    dropped = 0
+    for owner, jobs, *values in rows:
+        if owner is None:
+            dropped += jobs or 0
+            continue
         totals = _empty_totals()
-        totals["jobs"] = bucket.get("doc_count", 0)
-        for name in _DAY_COUNTS:
-            totals[name] = (bucket.get(name) or {}).get("doc_count", 0)
-        for name in _DAY_SUMS:
-            totals[name] = (bucket.get(name) or {}).get("value") or 0
-        owners[str(bucket["key"])] = totals
+        totals["jobs"] = jobs or 0
+        for name, value in zip(_USER_DAY_FIELDS, values):
+            totals[name] = _as_seconds(value) or 0
+        totals["memoryUsed"] /= KIB_PER_MB
+        owners[str(owner)] = totals
 
-    logger.info("Adstash user day %s: %d owners in %sms", day, len(owners), response.get("took"))
-    return {"owners": owners, "dropped": aggregation.get("sum_other_doc_count", 0)}
+    for (requested, (used, _)), result in zip(_USER_DAY_REQUESTS.items(), request_rows):
+        sums = {str(owner): _as_seconds(total) or 0 for owner, total in result if owner is not None}
+        unknown = []
+        for owner, totals in owners.items():
+            if owner in sums:
+                totals[requested] = sums[owner]
+            else:
+                totals[used] = 0
+                unknown.append(owner)
+        if unknown:
+            logger.warning(
+                "User day %s: %s could not be summed for %s; their %s is left out of that day",
+                day, requested, ", ".join(sorted(unknown)), used,
+            )
+
+    if dropped:
+        logger.warning("User day %s: %d jobs came back with no Owner and were left out", day, dropped)
+    logger.info("User day %s: %d owners", day, len(owners))
+    return {"owners": owners, "dropped": dropped}
 
 
 def _ratio(numerator: float, denominator: float) -> Optional[float]:
@@ -1972,32 +1821,29 @@ async def build_user_range_summary(start: str, end: str) -> dict:
     overlap -- which is nearly every pair a reader looks at in succession -- share
     everything but the days that differ between them.
 
-    Every figure is a count, a sum or a maximum, each of which merges across days
-    exactly. That is a deliberate constraint rather than a coincidence: a median
-    used memory was measured and dropped because it cannot be merged this way, and
-    asking for it range-wide cost about six seconds on a range nobody had opened
-    before -- more than the rest of the table put together.
+    Every figure is a count or a sum, each of which merges across days exactly.
+    That is a deliberate constraint rather than a coincidence: a median used
+    memory was measured and dropped because it cannot be merged this way, and
+    asking for it range-wide cost more than the rest of the table put together.
 
     The fan-out is bounded rather than unbounded: a long range would otherwise
-    open hundreds of concurrent searches at once, which costs Elasticsearch more
-    than it costs this process.
+    open hundreds of concurrent queries at once, which costs htcondordb more than
+    it costs this process.
     """
     first, last = parse_range(start, end)
     days = range_days(first, last)
 
     limit = asyncio.Semaphore(DAY_FETCH_CONCURRENCY)
 
-    async with _es_client() as client:
+    async def one(day: date) -> dict:
+        async with limit:
+            return await cached_day(
+                ("user-day", day.isoformat()),
+                day_cache_ttl(day),
+                lambda: fetch_user_day(day),
+            )
 
-        async def one(day: date) -> dict:
-            async with limit:
-                return await cached_day(
-                    ("user-day", day.isoformat()),
-                    day_cache_ttl(day),
-                    lambda: fetch_user_day(client, day),
-                )
-
-        results = await asyncio.gather(*(one(day) for day in days))
+    results = await asyncio.gather(*(one(day) for day in days))
 
     merged: dict[str, dict[str, Any]] = {}
     truncated = False
@@ -2018,5 +1864,5 @@ async def build_user_range_summary(start: str, end: str) -> dict:
         "users": rows,
         "totalUsers": len(rows),
         "truncated": truncated,
-        "source": {"host": ES_HOST, "index": ES_INDEX},
+        "source": {"host": HTCONDORDB_ADDRESS, "index": HISTORY_TABLE},
     }

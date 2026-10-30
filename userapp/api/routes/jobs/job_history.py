@@ -41,7 +41,6 @@ from userapp.api.routes.jobs._util import (
     build_job_series,
     build_user_range_summary,
     cached,
-    owner_schedds,
     resolve_owner,
 )
 from userapp.api.routes.security import (
@@ -110,9 +109,9 @@ async def get_job_series(
 ) -> JobSeries:
     """Per-cluster placements and terminal transitions, binned across the window.
 
-    Merged from Adstash (one terminal record per finished job) and the live
-    condor_q queue (everything that has not finished). Counts are sparse: a bin
-    with no jobs is absent rather than zero.
+    Merged from ap2001's htcondordb: its history (one terminal record per
+    finished job) and its live queue (everything that has not finished). Counts
+    are sparse: a bin with no jobs is absent rather than zero.
     """
     if bin_hours not in ALLOWED_BIN_HOURS:
         # Checked here rather than only in the aggregation so a bad width never
@@ -125,11 +124,10 @@ async def get_job_series(
     if (start is None) != (end is None):
         raise HTTPException(status_code=422, detail="start and end must be given together")
 
-    netid, user_id = await resolve_owner(session, owner, user_token, admin)
-    schedds = await owner_schedds(session, user_id)
+    netid, _ = await resolve_owner(session, owner, user_token, admin)
     return await cached(
         ("series", netid, days_back, bin_hours, start, end),
-        lambda: build_job_series(netid, schedds, days_back, bin_hours, start, end),
+        lambda: build_job_series(netid, days_back, bin_hours, start, end),
     )
 
 
@@ -153,11 +151,10 @@ async def get_job_day_summary(
     if (start is None) != (end is None):
         raise HTTPException(status_code=422, detail="start and end must be given together")
 
-    netid, user_id = await resolve_owner(session, owner, user_token, admin)
-    schedds = await owner_schedds(session, user_id)
+    netid, _ = await resolve_owner(session, owner, user_token, admin)
     return await cached(
         ("day-summary", netid, days_back, start, end),
-        lambda: build_job_day_summary(netid, schedds, days_back, start, end),
+        lambda: build_job_day_summary(netid, days_back, start, end),
     )
 
 

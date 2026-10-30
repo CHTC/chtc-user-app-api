@@ -33,6 +33,12 @@ class BatchInfo(BaseModel):
 
 
 class AdstashSource(BaseModel):
+    """Where the terminal records came from.
+
+    Named for Adstash, which used to supply them; they now come from htcondordb's
+    history table, with `host` its address and `index` the table. The name stays
+    because the viewer reads this key, as does `condorQ` below for the queue."""
+
     host: str
     index: str
 

@@ -1,9 +1,10 @@
 """Access control and parameter handling for the /jobs history endpoints.
 
-The aggregation itself is not exercised here: it needs a reachable Adstash and a
-schedd, so both builders are stubbed and what is checked is the part that decides
-*who may ask* and *whose* jobs get aggregated. That is the half with a security
-consequence.
+The queries themselves are not exercised here: they need a reachable htcondordb,
+so the builders are stubbed and what is checked is the part that decides *who may
+ask* and *whose* jobs get aggregated. That is the half with a security
+consequence. The arithmetic that folds query results into payloads is pure, and
+is tested directly further down.
 
 For now the whole router is admin-only (see the router dependencies in
 job_history.py), so a non-admin is refused even for their own jobs. The
@@ -12,7 +13,6 @@ that lifting the gate later is a one-line change rather than a rewrite.
 """
 
 import asyncio
-import random
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -25,8 +25,8 @@ from userapp.api.routes.jobs import _util, job_history
 def stub_builders(monkeypatch):
     """Replace the two aggregations with recorders, and turn the cache off.
 
-    Returns the call log: one dict per call, so a test can assert which owner and
-    which schedds the route resolved before any query would have been made.
+    Returns the call log: one dict per call, so a test can assert which owner the
+    route resolved before any query would have been made.
     """
 
     calls = []
@@ -44,14 +44,14 @@ def stub_builders(monkeypatch):
             },
         }
 
-    async def fake_series(owner, schedds, days_back, bin_hours, start=None, end=None):
-        calls.append({"endpoint": "series", "owner": owner, "schedds": schedds,
+    async def fake_series(owner, days_back, bin_hours, start=None, end=None):
+        calls.append({"endpoint": "series", "owner": owner,
                       "days_back": days_back, "bin_hours": bin_hours,
                       "start": start, "end": end})
         return {**_payload(owner), "binHours": bin_hours, "binsPerDay": 24 // bin_hours, "series": []}
 
-    async def fake_day_summary(owner, schedds, days_back, start=None, end=None):
-        calls.append({"endpoint": "day-summary", "owner": owner, "schedds": schedds,
+    async def fake_day_summary(owner, days_back, start=None, end=None):
+        calls.append({"endpoint": "day-summary", "owner": owner,
                       "days_back": days_back, "start": start, "end": end})
         payload = _payload(owner)
         payload["sources"]["adstash"]["terminalRecords"] = 0
@@ -62,7 +62,7 @@ def stub_builders(monkeypatch):
     async def fake_user_range_summary(start, end):
         calls.append({"endpoint": "users", "start": start, "end": end})
         # parse_range is the half of the real builder with a decision in it, so
-        # it still runs; only the Elasticsearch fan-out below it is replaced.
+        # it still runs; only the htcondordb fan-out below it is replaced.
         first, last = _util.parse_range(start, end)
         return {
             "start": first.isoformat(), "end": last.isoformat(),
@@ -78,25 +78,6 @@ def stub_builders(monkeypatch):
     # Otherwise the first test's answer would be served to every later one.
     monkeypatch.setattr(_util, "CACHE_SECONDS", 0)
     return calls
-
-
-@pytest.fixture
-def submit_node_factory(existing_admin_client):
-    """Submit nodes that outlive one test's user, cleaned up afterwards."""
-
-    created = []
-
-    def _create(name: str, group_id: int) -> dict:
-        response = existing_admin_client.post("/submit_nodes", json={"name": name, "group_id": group_id})
-        assert response.status_code == 201, response.text
-        node = response.json()
-        created.append(node)
-        return node
-
-    yield _create
-
-    for node in created:
-        existing_admin_client.delete(f"/submit_nodes/{node['id']}")
 
 
 class TestJobsAuthentication:
@@ -169,31 +150,6 @@ class TestJobsOwnerScope:
         response = existing_admin_client.get("/jobs/series")
 
         assert response.status_code == 409
-
-
-class TestJobsSchedds:
-
-    def test_schedds_come_from_the_owners_submit_nodes(
-        self, existing_admin_client, user, group_factory, submit_node_factory, stub_builders,
-    ):
-        group = group_factory()
-        node = submit_node_factory(f"ap{random.randint(1000, 9999)}.chtc.wisc.edu", group["id"])
-        existing_admin_client.patch(
-            f"/users/{user['id']}",
-            json={"submit_nodes": [{"submit_node_id": node["id"]}]},
-        )
-
-        existing_admin_client.get("/jobs/series", params={"owner": user["netid"]})
-
-        assert stub_builders[0]["schedds"] == [node["name"]]
-
-    def test_non_hostname_submit_nodes_are_skipped(self, existing_admin_client, user, stub_builders):
-        """The `user` fixture's node is named "test-submit-<n>", which names a
-        service rather than a schedd; `condor_q -name` could do nothing with it."""
-
-        existing_admin_client.get("/jobs/series", params={"owner": user["netid"]})
-
-        assert stub_builders[0]["schedds"] == []
 
 
 class TestJobsParameters:
@@ -375,9 +331,8 @@ class TestUserRangeAggregation:
                         jobs=900, removed=90, held=9, failed=45, retried=18,
                         slotSeconds=9000, wallSeconds=4500, userCpu=8000, sysCpu=100,
                         memoryUsed=900, memoryRequested=1000,
-                        maxRequestedMemory=4096, maxUsedMemory=6000,
-                        maxRequestedDisk=20 * 1024 * 1024, maxUsedDisk=2 * 1024 * 1024,
-                        maxRequestedCpus=16,
+                        diskUsed=2 * 1024 * 1024, diskRequested=20 * 1024 * 1024,
+                        cpusRequested=1800,
                     )
                 },
                 "dropped": 0,
@@ -388,9 +343,8 @@ class TestUserRangeAggregation:
                         jobs=100, removed=10, held=1, failed=5, retried=2,
                         slotSeconds=1000, wallSeconds=1000, userCpu=100, sysCpu=0,
                         memoryUsed=0, memoryRequested=1000,
-                        maxRequestedMemory=8192, maxUsedMemory=1200,
-                        maxRequestedDisk=4 * 1024 * 1024, maxUsedDisk=None,
-                        maxRequestedCpus=8,
+                        diskRequested=4 * 1024 * 1024,
+                        cpusRequested=100,
                     ),
                     "quiet": self._day(jobs=4, memoryRequested=200, memoryUsed=10),
                 },
@@ -399,7 +353,7 @@ class TestUserRangeAggregation:
         ]
         supplied = iter(days)
 
-        async def fake_fetch(client, day):
+        async def fake_fetch(day):
             return next(supplied, {"owners": {}, "dropped": 0})
 
         monkeypatch.setattr(_util, "fetch_user_day", fake_fetch)
@@ -410,24 +364,16 @@ class TestUserRangeAggregation:
     def _summary():
         return asyncio.run(_util.build_user_range_summary("2026-07-01", "2026-07-03"))
 
-    def test_maxima_take_the_largest_across_days_rather_than_adding(self, two_days):
+    def test_resources_are_summed_and_reported_in_gb(self, two_days):
         row = next(u for u in self._summary()["users"] if u["owner"] == "busy")
 
-        # 4096 on the busy day, 8192 on the quiet one. Summing would say 12288,
-        # which is a number no job ever requested.
-        assert row["maxRequestedMemoryMb"] == 8192
-        assert row["maxUsedMemoryMb"] == 6000
-        assert row["maxRequestedCpus"] == 16
-        # Disk is stored in KiB and reported in GB.
-        assert row["maxRequestedDiskGb"] == pytest.approx(20.0)
-        assert row["maxUsedDiskGb"] == pytest.approx(2.0)
-
-    def test_a_maximum_nothing_recorded_is_unknown_not_zero(self, two_days):
-        quiet = next(u for u in self._summary()["users"] if u["owner"] == "quiet")
-
-        # Zero would be indistinguishable from a job that really used no disk.
-        assert quiet["maxUsedDiskGb"] is None
-        assert quiet["maxRequestedCpus"] is None
+        # Memory is recorded in MB, disk in KiB; both come back as GB summed
+        # over every job in the range.
+        assert row["memoryRequestedGb"] == pytest.approx(2000 / 1024)
+        assert row["memoryUsedGb"] == pytest.approx(900 / 1024)
+        assert row["diskRequestedGb"] == pytest.approx(24.0)
+        assert row["diskUsedGb"] == pytest.approx(2.0)
+        assert row["cpusRequested"] == 1900
 
     def test_counts_are_the_sum_of_their_days(self, two_days):
         row = next(u for u in self._summary()["users"] if u["owner"] == "busy")
@@ -442,11 +388,12 @@ class TestUserRangeAggregation:
     def test_ratios_divide_summed_totals_rather_than_averaging_days(self, two_days):
         row = next(u for u in self._summary()["users"] if u["owner"] == "busy")
 
-        # 8100 + 100 CPU seconds over 9000 + 1000 slot seconds. Averaging the
-        # two days' own ratios (90% and 10%) would say 50%.
-        assert row["cpuPct"] == pytest.approx(82.0)
         # 900 MB used of 2000 requested; the quiet day used none of its 1000.
+        # Averaging the two days' own ratios (90% and 0%) would say 45% too, so
+        # disk is the case that tells them apart: 2 GB of 24 is 8.3%, where the
+        # days' own ratios (10% and 0%) average to 5%.
         assert row["memoryPct"] == pytest.approx(45.0)
+        assert row["diskPct"] == pytest.approx(100 * 2 / 24)
         assert row["removedPct"] == pytest.approx(10.0)
         assert row["avgRuntimeSeconds"] == pytest.approx(5.5)
 
@@ -460,13 +407,13 @@ class TestUserRangeAggregation:
     def test_an_absent_denominator_reads_as_unknown_not_as_zero(self, two_days):
         quiet = next(u for u in self._summary()["users"] if u["owner"] == "quiet")
 
-        # No slot time was recorded, so its CPU efficiency is not known. Zero
-        # would claim the opposite -- that every core it bought sat idle.
-        assert quiet["cpuPct"] is None
+        # No disk was requested, so how much of it was used is not known. Zero
+        # would claim the opposite -- that every byte it asked for sat empty.
+        assert quiet["diskPct"] is None
         assert quiet["memoryPct"] == pytest.approx(5.0)
 
     def test_a_truncated_day_truncates_the_range(self, monkeypatch, two_days):
-        async def fake_fetch(client, day):
+        async def fake_fetch(day):
             return {"owners": {}, "dropped": 17}
 
         monkeypatch.setattr(_util, "fetch_user_day", fake_fetch)
@@ -611,7 +558,6 @@ class TestWindowSides:
         assert week.day_key(week.end_sec + 3600) == "2026-09-04"
         assert week.day_key(0) is None
         assert week.day_key(None) is None
-        assert week.day_key_from_key(week.missing_day_key_ms) is None, "the missing bucket is not a day"
 
 
 class TestOverlapSelection:
@@ -621,17 +567,25 @@ class TestOverlapSelection:
         self.week = _util.build_calendar_for_range("2026-08-28", "2026-09-04")
 
     def test_terminal_records_are_kept_when_they_outlive_the_window(self):
-        query = _util.overlap_query("alice", self.week)["bool"]
+        week = self.week
+        before, inside, after = week.start_sec - 90 * _util.DAY_SECONDS, week.start_sec, week.end_sec
 
-        assert {"term": {"Owner": "alice"}} in query["filter"]
-        placed = next(f["range"]["QDate"] for f in query["filter"] if "range" in f)
-        assert placed["lt"] == self.week.end_sec
-        assert "gte" not in placed, "a job placed long before the window may still be in it"
+        assert week.open_inside(before, after), "placed long before and finished after: open throughout"
+        assert week.open_inside(before, inside), "finished inside"
+        assert week.open_inside(inside, inside), "placed inside"
+        assert not week.open_inside(before, inside - 1), "finished before the window opened"
+        assert not week.open_inside(after, after), "placed after the window closed"
 
-        ends = [s["range"] for s in query["should"]]
-        assert {"EnteredCurrentStatus": {"gte": self.week.start_sec, "format": "epoch_second"}} in ends
-        assert {"QDate": {"gte": self.week.start_sec, "format": "epoch_second"}} in ends
-        assert query["minimum_should_match"] == 1
+    def test_hour_buckets_sit_on_the_same_side_of_an_edge_as_their_jobs(self):
+        # The selection runs on hour buckets, floored to the UTC hour. Exact only
+        # because every edge the calendar draws is on the hour.
+        week = self.week
+        assert week.start_sec % _util.BUCKET_SECONDS == 0
+        assert week.end_sec % _util.BUCKET_SECONDS == 0
+        assert all(edge % _util.BUCKET_SECONDS == 0 for edge in week.bin_boundaries)
+
+        last_hour_before = week.start_sec - _util.BUCKET_SECONDS
+        assert not week.open_inside(last_hour_before, last_hour_before)
 
     def test_live_ads_are_kept_when_placed_before_the_window_closed(self):
         week = self.week
@@ -810,3 +764,139 @@ class TestDayAggregatorAcrossWindows:
         assert cohort["asOf"][self.week.days[0]] == (0, 3, 0, 0)
         assert cohort["asOf"][self.week.days[2]] == (0, 3, 0, 0)
         assert cohort["asOf"][self.week.days[3]] == (0, 0, 3, 0)
+
+
+class TestHistoryFolding:
+    """Turning htcondordb's grouped rows into the counts the builders use.
+
+    db_query is replaced by a recorder that answers from canned rows, so these
+    check the folding rather than the database.
+    """
+
+    def setup_method(self):
+        self.week = _util.build_calendar_for_range("2026-08-28", "2026-09-04")
+
+    @staticmethod
+    def _fake_db(monkeypatch, answer):
+        """Install a db_query that answers `answer(sql, params)` and logs each call."""
+        calls = []
+
+        async def fake(sql, params=()):
+            calls.append((sql, list(params)))
+            return answer(sql, list(params))
+
+        monkeypatch.setattr(_util, "db_query", fake)
+        return calls
+
+    def test_jobs_that_never_ran_are_the_group_less_the_ones_that_did(self):
+        q, e = 1000 * 3600, 1010 * 3600
+        terminal = {(9, False, q, e): 10, (9, True, q, e): 4, (11, False, q, e): 2}
+        started = {
+            (9, False, q, q + 3600, e): 6,
+            (9, False, q, q + 7200, e): 1,
+            (9, True, q, q + 3600, e): 4,
+            # A record ingested between the two queries: clamped, not negative.
+            (11, False, q, q + 3600, e): 3,
+        }
+
+        assert _util.never_started(terminal, started) == {(9, False, q, e): 3}
+
+    def test_terminal_groups_keep_only_jobs_open_inside_the_window(self, monkeypatch):
+        week = self.week
+        hour = _util.BUCKET_SECONDS
+        rows = [
+            (9, week.start_sec - 50 * hour, week.start_sec + hour, 5),   # placed before, ended inside
+            (9, week.start_sec - 50 * hour, week.start_sec - hour, 7),   # ended before: not here
+            (10, week.start_sec + hour, week.end_sec + hour, 2),         # placed inside, ended after
+        ]
+        calls = self._fake_db(monkeypatch, lambda sql, params: rows if "== 3" in sql else [])
+
+        groups = asyncio.run(_util.fetch_terminal_groups("alice", week, snapshot=week.end_sec + 99))
+
+        assert groups == {
+            (9, True, week.start_sec - 50 * hour, week.start_sec + hour): 5,
+            (10, True, week.start_sec + hour, week.end_sec + hour): 2,
+        }
+        # Removed and the rest are asked for separately, both bounded by the
+        # window's start below and the snapshot above.
+        assert len(calls) == 2
+        assert all(params == ["alice", week.start_sec, week.end_sec + 99] for _, params in calls)
+
+    @staticmethod
+    def _user_day_answer(main, memory, disk):
+        """Answer each of a user day's three queries from its own canned rows."""
+        def answer(sql, params):
+            if "RequestMemory" in sql:
+                return memory
+            if "RequestDisk" in sql:
+                return disk
+            return main
+        return answer
+
+    def test_a_user_day_maps_each_column_and_converts_resident_memory(self, monkeypatch):
+        main = [
+            # removed, held, failed, retried, then slot, wall, user, sys, RSS (KiB), disk used, cpus
+            ("alice", 12, 1, 2, 3, 4, 3600, 50, 40, 5, 2048 * 1024, 10, 8),
+            # htcondordb's way of failing to aggregate: owners merged, no Owner.
+            (None, 30, 0, 0, 0, 0, None, None, None, None, None, None, None),
+        ]
+        self._fake_db(monkeypatch, self._user_day_answer(main, [("alice", 4096)], [("alice", 20)]))
+
+        day = asyncio.run(_util.fetch_user_day(date(2026, 8, 28)))
+
+        alice = day["owners"]["alice"]
+        assert (alice["jobs"], alice["removed"], alice["held"], alice["failed"], alice["retried"]) == (12, 1, 2, 3, 4)
+        assert alice["slotSeconds"] == 3600
+        assert alice["memoryUsed"] == 2048, "ResidentSetSize is KiB; the table wants MB"
+        assert alice["memoryRequested"] == 4096
+        assert (alice["diskUsed"], alice["diskRequested"]) == (10, 20)
+        assert alice["cpusRequested"] == 8
+        assert "None" not in day["owners"]
+        assert day["dropped"] == 30, "the merged row marks the range truncated"
+
+    def test_a_request_that_could_not_be_summed_leaves_out_that_resource_only(self, monkeypatch):
+        main = [("alice", 12, 0, 0, 0, 0, 3600, 50, 40, 5, 2048 * 1024, 10, 8)]
+        # alice's RequestMemory sum met an expression and was merged away.
+        memory = [(None, 12)]
+        self._fake_db(monkeypatch, self._user_day_answer(main, memory, [("alice", 20)]))
+
+        day = asyncio.run(_util.fetch_user_day(date(2026, 8, 28)))
+
+        alice = day["owners"]["alice"]
+        # Used without requested would make the percentage compare different
+        # jobs, so both go.
+        assert (alice["memoryUsed"], alice["memoryRequested"]) == (0, 0)
+        assert (alice["diskUsed"], alice["diskRequested"]) == (10, 20), "disk is unaffected"
+        assert alice["jobs"] == 12
+        assert day["dropped"] == 0, "the user is still all there"
+
+    def test_live_jobs_already_in_history_are_dropped(self, monkeypatch):
+        live = [
+            (9, 0, 100, 2, 90, 90, "batch"),
+            (9, 1, 100, 1, None, 100, None),
+        ]
+
+        def answer(sql, params):
+            if f"FROM {_util.JOBS_TABLE}" in sql:
+                return live
+            return [(9, 1)]  # 9.1 finished and is already in history
+
+        self._fake_db(monkeypatch, answer)
+
+        jobs, errors, snapshot = asyncio.run(_util.query_live_jobs("alice"))
+
+        assert list(jobs) == ["9.0"]
+        assert jobs["9.0"]["JobBatchName"] == "batch"
+        assert errors == []
+        assert snapshot > 0
+
+    def test_a_failed_live_read_is_an_understatement_not_an_error(self, monkeypatch):
+        async def failing(sql, params=()):
+            raise HTTPException(status_code=502, detail="htcondordb query failed: boom")
+
+        monkeypatch.setattr(_util, "db_query", failing)
+
+        jobs, errors, _ = asyncio.run(_util.query_live_jobs("alice"))
+
+        assert jobs == {}
+        assert errors == [f"{_util.HTCONDORDB_SCHEDD}: htcondordb query failed: boom"]
