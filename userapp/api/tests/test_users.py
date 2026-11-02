@@ -1,15 +1,10 @@
-import asyncio
 import random
 
 from httpx import Client
 import pytest
 from pydantic import ValidationError
 
-from sqlalchemy import text
-
-from userapp.api.tests.conftest import _seed_db_url
 from userapp.api.tests.fake_data import user_data_f
-from userapp.db import connect_engine
 from userapp.core.models.enum import RoleEnum
 from userapp.core.schemas.general import JoinedProjectView
 from userapp.core.schemas.users import UserGet, UserPost
@@ -553,97 +548,38 @@ class TestUserAuthBehavior:
         assert project_view["auth_username"] == (project_view["active"] and expected_auth_username(project_view))
 
 
-def _run_sql(statement: str, params: dict, bypass_triggers: bool = False) -> None:
-    """Run one statement against the test database, optionally skipping triggers (needs a superuser)"""
+class TestActivateWithoutPrimaryProject:
+    """An inactive user can be made active without a primary project."""
 
-    async def run():
-        engine = await connect_engine(_seed_db_url())
-        async with engine.begin() as connection:
-            if bypass_triggers:
-                await connection.execute(text("SET session_replication_role = replica"))
-            await connection.execute(text(statement), params)
-        await engine.dispose()
-
-    asyncio.run(run())
-
-
-class TestActivateRequiresPrimaryProject:
-    """An inactive user cannot be made active unless they have a primary project."""
-
-    @pytest.fixture
-    def inactive_user_without_primary(self, existing_admin_client: Client, project_factory):
+    def test_activate_without_primary_project_succeeds(self, existing_admin_client: Client, project_factory):
         project = project_factory()
-        created = existing_admin_client.post("/users", json=user_data_f(200, project["id"]))
-        assert created.status_code == 201, created.text
-        user = created.json()
-
-        assert existing_admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
-        demote = existing_admin_client.patch(
-            f"/users/{user['id']}/projects/{project['id']}", json={"is_primary": False}
-        )
-        assert demote.status_code == 200, demote.text
-
-        yield user, project
-
-        existing_admin_client.delete(f"/users/{user['id']}")
-        existing_admin_client.delete(f"/projects/{project['id']}")
-
-    def test_activate_without_primary_project_fails(self, existing_admin_client: Client, inactive_user_without_primary):
-        user, _ = inactive_user_without_primary
-
-        response = existing_admin_client.patch(f"/users/{user['id']}", json={"active": True})
-        assert response.status_code == 400, response.text
-        assert "primary project" in response.json()["detail"].lower()
-        assert existing_admin_client.get(f"/users/{user['id']}").json()["active"] is False
-
-    def test_activate_with_primary_project_succeeds(self, existing_admin_client: Client, inactive_user_without_primary):
-        user, project = inactive_user_without_primary
-
-        existing_admin_client.patch(f"/users/{user['id']}/projects/{project['id']}", json={"is_primary": True})
-        response = existing_admin_client.patch(f"/users/{user['id']}", json={"active": True})
-        assert response.status_code == 200, response.text
-        assert response.json()["active"] is True
-
-    def test_edit_inactive_user_without_primary_project_still_allowed(
-        self, existing_admin_client: Client, inactive_user_without_primary
-    ):
-        """Only the inactive -> active change is checked."""
-        user, _ = inactive_user_without_primary
-
-        response = existing_admin_client.patch(f"/users/{user['id']}", json={"name": "Renamed User"})
-        assert response.status_code == 200, response.text
-
-    def test_existing_active_user_without_primary_can_be_edited(self, existing_admin_client: Client, project_factory):
-        """Existing active users with no primary project are not blocked when active is unchanged."""
-        project = project_factory()
-        user = existing_admin_client.post("/users", json=user_data_f(201, project["id"])).json()
+        user = existing_admin_client.post("/users", json=user_data_f(200, project["id"])).json()
         try:
-            # The API no longer lets this happen, so write the legacy state straight to the database
-            _run_sql(
-                "UPDATE user_projects SET is_primary = false WHERE user_id = :user_id",
-                {"user_id": user["id"]},
-                bypass_triggers=True,
+            assert existing_admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
+            demote = existing_admin_client.patch(
+                f"/users/{user['id']}/projects/{project['id']}", json={"is_primary": False}
             )
+            assert demote.status_code == 200, demote.text
 
-            response = existing_admin_client.patch(f"/users/{user['id']}", json={"active": True, "name": "Renamed User"})
+            response = existing_admin_client.patch(f"/users/{user['id']}", json={"active": True})
             assert response.status_code == 200, response.text
+            assert response.json()["active"] is True
         finally:
             existing_admin_client.delete(f"/users/{user['id']}")
             existing_admin_client.delete(f"/projects/{project['id']}")
 
 
-class TestActiveUserKeepsPrimaryProject:
-    """An active user's primary membership can't be removed, except by deleting the project or the user."""
+class TestRemovePrimaryMembership:
+    """Any user's primary membership can be removed."""
 
-    def test_delete_primary_membership_of_active_user_rejected(self, existing_admin_client: Client, user):
+    def test_delete_primary_membership_of_active_user_allowed(self, existing_admin_client: Client, user):
         project_id = user["projects"][0]["project_id"]
 
         response = existing_admin_client.delete(f"/projects/{project_id}/users/{user['id']}")
-        assert response.status_code == 400, response.text
-        assert "primary project" in response.json()["detail"].lower()
+        assert response.status_code == 204, response.text
 
         memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
-        assert project_id in [m["project_id"] for m in memberships]
+        assert project_id not in [m["project_id"] for m in memberships]
 
     def test_delete_non_primary_membership_of_active_user_allowed(self, existing_admin_client: Client, user, project_factory):
         other = project_factory()

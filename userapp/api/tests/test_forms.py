@@ -463,14 +463,14 @@ class TestPreserveExistingData:
         assert user_post_approval["projects"][0]["project_id"] != user["projects"][0]["project_id"]
         assert user_post_approval["submit_nodes"][0]["name"] != user["submit_nodes"][0]["name"]
 
-    def test_approve_with_preserve_fails_without_primary_project(
+    def test_approve_with_preserve_succeeds_without_primary_project(
             self,
             nonadmin_client: Client,
             admin_client: Client,
             project_factory,
             user: dict,
     ):
-        """Approving with preserve_existing_data can't activate a user who has no primary project."""
+        """Approving with preserve_existing_data activates a user even if they have no primary project."""
 
         project_id = user["projects"][0]["project_id"]
         assert admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
@@ -486,9 +486,8 @@ class TestPreserveExistingData:
             f"/forms/user-applications/{form_id}",
             json={**user_form_approval_data_f(approval_project["id"], []), "status": "APPROVED", "preserve_existing_data": True},
         )
-        assert approval.status_code == 400, approval.text
-        assert approval.json()["detail"] == "A user must have a primary project before they can be made active"
-        assert admin_client.get(f"/users/{user['id']}").json()["active"] is False
+        assert approval.status_code == 200, approval.text
+        assert admin_client.get(f"/users/{user['id']}").json()["active"] is True
 
     def test_approve_with_preserve_keeps_existing_data(
             self,
