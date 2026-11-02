@@ -102,8 +102,8 @@ class TestPatchUserProject:
         membership = next(m for m in get_resp.json() if m["id"] == user["id"])
         assert membership["role"] == RoleEnum.MEMBER.value
 
-    def test_patch_is_primary_false_rejected_for_active_user(self, existing_admin_client, user, url_for):
-        """An active user's only primary project can't be unset."""
+    def test_patch_is_primary_false_allowed_for_active_user(self, existing_admin_client, user, url_for):
+        """Active users may have no primary project."""
         project_id = user["projects"][0]["project_id"]
         assert user["active"] is True
 
@@ -111,11 +111,8 @@ class TestPatchUserProject:
             url_for(user["id"], project_id),
             json={"is_primary": False},
         )
-        assert response.status_code == 400, response.text
-        assert "primary project" in response.json()["detail"].lower()
-
-        memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
-        assert [m["project_id"] for m in memberships if m["is_primary"]] == [project_id]
+        assert response.status_code == 200, response.text
+        assert response.json()["is_primary"] is False
 
     def test_patch_is_primary_false_allowed_for_inactive_user(self, existing_admin_client, user, url_for):
         """Inactive users may have no primary project."""

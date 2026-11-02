@@ -23,7 +23,7 @@ from userapp.query_parser import QueryParser
 logger = logging.getLogger(__name__)
 
 # Database triggers raise exceptions with this prefix on messages that are safe to show the
-# caller, e.g. "an active user must keep a primary project".
+# caller.
 USER_VISIBLE_PREFIX = "user-visible: "
 
 

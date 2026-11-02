@@ -101,7 +101,6 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
         # Grant access to the approved submit nodes via their associated groups
         await _patch_user_submit_nodes(session, user, form.submit_nodes)
 
-    # Activate last: the database refuses to activate a user who has no primary project yet
     user.active = True
     await session.flush()
 
