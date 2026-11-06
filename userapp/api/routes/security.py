@@ -10,7 +10,7 @@ from fastapi.routing import iter_route_contexts
 from fastapi.security import HTTPBearer
 import httpx
 from pydantic import BaseModel
-from starlette.responses import Response, RedirectResponse
+from starlette.responses import JSONResponse, Response, RedirectResponse
 from jose import JWTError, jwt
 from sqlalchemy.future import select
 from passlib.context import CryptContext
@@ -20,7 +20,7 @@ from userapp.api.util import get_one_endpoint
 from userapp.core.models.tables import User as UserTable, Token, Project, GroupEffectiveMember
 from userapp.core.services.membership import is_group_administrator
 from userapp.core.schemas.note import NoteGet
-from userapp.core.schemas.users import UserGetFull, UserGet
+from userapp.core.schemas.users import MeGet, UserGet
 from userapp.core.schemas.general import JoinedProjectView
 from userapp.api.load_options import user_load_options
 from userapp.db import session_generator
@@ -68,6 +68,29 @@ http_bearer = HTTPBearer(auto_error=False)
 class TokenData(BaseModel):
     user_id: int
     is_admin: bool
+    # Set while a staff member views the site as user_id: the staff member's own id. Every
+    # permission check reads user_id and is_admin, so the request behaves exactly as user_id's.
+    impersonator_id: int | None = None
+    # Ties the login cookie to the CSRF cookie; reused when the login cookie is reissued
+    session_id: str | None = None
+    # When the login expires (unix time); a reissued cookie never outlives the original login
+    exp: int | None = None
+
+
+IMPERSONATION_MINUTES = 60
+
+
+def impersonation_enabled() -> bool:
+    """Staff may view the site as another user only when ALLOW_IMPERSONATE=true (not for production)"""
+
+    return os.environ.get("ALLOW_IMPERSONATE", "false").lower() == "true"
+
+
+async def check_impersonation_enabled() -> None:
+    """The /impersonate routes do not exist while the feature is off"""
+
+    if not impersonation_enabled():
+        raise HTTPException(status_code=404, detail="Not Found")
 
 class ApiTokenData(BaseModel):
     token_id: int
@@ -110,10 +133,17 @@ async def get_user_from_cookie(request: Request, token=Depends(get_login_token))
         )
         user_id: int = payload.get("user_id")
         is_admin: bool = payload.get("is_admin", False)
-        token_data = TokenData(is_admin=is_admin, user_id=user_id)
+        token_data = TokenData(
+            is_admin=is_admin, user_id=user_id,
+            impersonator_id=payload.get("impersonator_id"), session_id=payload.get("session_id"),
+            exp=payload.get("exp"),
+        )
     except JWTError as e:
         return None
 
+    # A "view as" cookie stops working the moment the feature is switched off
+    if token_data.impersonator_id is not None and not impersonation_enabled():
+        return None
     return token_data
 
 
@@ -582,12 +612,108 @@ async def logout_user(response: Response):
     return {"message": "Logout successful"}
 
 
+async def _me(session, user_token: TokenData) -> MeGet:
+    """The user the session runs as, with the staff member behind it when it is a "view as" session"""
+
+    user = await get_one_endpoint(session, UserTable, user_token.user_id, load_options=user_load_options)
+    me = MeGet.model_validate(user)
+    me.can_impersonate = impersonation_enabled() and bool(user.is_admin) and user_token.impersonator_id is None
+    if user_token.impersonator_id is not None:
+        # None if the staff member was deleted meanwhile; the session then ends with the cookie
+        staff = await session.get(UserTable, user_token.impersonator_id)
+        me.impersonator = UserGet.model_validate(staff) if staff is not None else None
+    return me
+
+
+def _set_login_cookie(response: Response, user: UserTable, current: TokenData, expires_at: datetime | None = None, **extra) -> None:
+    """Reissue the login cookie for *user* with the same cookie attributes as the OIDC callback.
+
+    session_id is kept so the CSRF cookie stays valid, and the new cookie expires when the
+    original login would have (or at expires_at if that is sooner): viewing as someone and
+    coming back must not stretch a login past what OIDC granted."""
+
+    login_ends = datetime.fromtimestamp(current.exp, timezone.utc) if current.exp else datetime.now(timezone.utc)
+    ends = min(login_ends, expires_at) if expires_at else login_ends
+    token = create_login_token(
+        expires_delta=ends - datetime.now(timezone.utc),
+        user_id=user.id, is_admin=user.is_admin, session_id=current.session_id, **extra,
+    )
+    response.set_cookie("login_token", f"Bearer {token}", httponly=True, samesite="strict")
+
+
 @router.get("/me")
 @router.post("/me", include_in_schema=False) # Added for testing only
-async def get_current_user(user_token=Depends(get_user_from_cookie), session=Depends(session_generator)) -> UserGetFull:
+async def get_current_user(user_token=Depends(get_user_from_cookie), session=Depends(session_generator)) -> MeGet:
     """Get the current user"""
 
     if user_token:
-        return await get_one_endpoint(session, UserTable, user_token.user_id, load_options=user_load_options)
+        return await _me(session, user_token)
     else:
         raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+@router.post("/impersonate/stop", tags=["Security"], dependencies=[Depends(check_impersonation_enabled)])
+async def stop_impersonating(
+    response: Response,
+    user_token=Depends(get_user_from_cookie),
+    session=Depends(session_generator),
+) -> MeGet:
+    """End a "view as" session: the login cookie goes back to the staff member, with the is_admin
+    they have now (a staff member who lost it meanwhile gets a plain user session)."""
+
+    if user_token is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if user_token.impersonator_id is None:
+        raise HTTPException(status_code=400, detail="Not viewing as another user")
+
+    staff = await session.get(UserTable, user_token.impersonator_id)
+    if staff is None:
+        # Nobody to go back to: log the session out (headers on an HTTPException are dropped)
+        gone = JSONResponse(status_code=401, content={"detail": "The logged-in user no longer exists"})
+        gone.delete_cookie("login_token")
+        return gone
+
+    _set_login_cookie(response, staff, user_token)
+    return await _me(session, TokenData(user_id=staff.id, is_admin=bool(staff.is_admin)))
+
+
+@router.post("/impersonate/{user_id}", tags=["Security"], dependencies=[Depends(check_impersonation_enabled)])
+async def impersonate_user(
+    user_id: int,
+    response: Response,
+    user_token=Depends(get_user_from_cookie),
+    session=Depends(session_generator),
+) -> MeGet:
+    """View the site as another user: staff only, and only with ALLOW_IMPERSONATE=true.
+
+    Replaces the login cookie with one for user_id, carrying the target's own is_admin and the
+    staff member's id as impersonator_id. From then on every request, read or write, is permitted
+    and answered exactly as it would be for that user, and audit rows name that user as the actor.
+    Expires after an hour. Calling it while already viewing as someone restarts from the staff
+    member, it never chains.
+    """
+
+    if user_token is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    staff_id = user_token.impersonator_id or user_token.user_id
+    staff = await session.get(UserTable, staff_id)
+    if staff is None:
+        raise HTTPException(status_code=401, detail="The logged-in user no longer exists")
+    # The database, not the cookie, decides: a "view as" cookie carries the target's flag, and a
+    # staff member demoted during their login must not keep this (API tokens and
+    # ALLOW_ADMIN_ACCESS do not grant it either, there is no real person to come back to)
+    if not staff.is_admin:
+        raise HTTPException(status_code=403, detail="User is not an admin")
+    if user_id == staff_id:
+        raise HTTPException(status_code=400, detail="Already logged in as this user; use /impersonate/stop")
+    target = await session.get(UserTable, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    _set_login_cookie(
+        response, target, user_token,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=IMPERSONATION_MINUTES),
+        impersonator_id=staff.id,
+    )
+    return await _me(session, TokenData(user_id=target.id, is_admin=bool(target.is_admin), impersonator_id=staff.id))

@@ -94,6 +94,16 @@ class UserGetFull(UserGet):
     groups: list["UserGroupsView"] = Field(default=[])
     user_forms: list["UserApplicationViewSchema"] = Field(default=[])
 
+
+class MeGet(UserGetFull):
+    """GET /me: the user the session runs as, and the staff member really logged in when that
+    user is being viewed as (null otherwise)"""
+
+    impersonator: Optional[UserGet] = Field(default=None)
+    # Staff, ALLOW_IMPERSONATE=true and not already viewing as someone: the UI offers "View as"
+    can_impersonate: bool = Field(default=False)
+
+
 class UserPost(BaseModel):
 
     model_config = ConfigDict(extra='ignore')
