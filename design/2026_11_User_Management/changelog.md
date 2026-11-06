@@ -36,7 +36,7 @@
 - The query parser now parses ISO 8601 timestamps and a malformed filter is a 400 instead of a 500, on every list route ([details](#query-parser-timestamps-and-400-on-bad-filters)) [api, query-parser, error-handling, addition, autonomous]
 - `POST /projects` with only one of `pi_group_id` / `project_group_id` creates just the missing side; a missing project group also gets a managers group, a missing pi group is created alone ([details](#post-projects-with-one-group-supplied)) [projects, groups, clarification, autonomous]
 - Project viewing (`GET /projects/{id}`, `/users`, `/pis`) is allowed to staff, pi-group effective members and project-group administrators through a dependency local to `projects.py` ([details](#project-view-rule)) [permissions, projects, addition, autonomous]
-- A PUT on a project by a non-staff PI that names `pi_group_id`, `project_group_id`, `accounting_group`, `staff1` or `staff2` is refused even when the value is unchanged ([details](#pi-put-field-restriction)) [permissions, projects, clarification, autonomous]
+- A PUT on a project by a non-staff PI that names `pi_group_id`, `project_group_id`, `accounting_group`, `staff1`, `staff2` or `ticket` is refused even when the value is unchanged ([details](#pi-put-field-restriction)) [permissions, projects, clarification, hil]
 - `DELETE /projects/{id}/users/{uid}` and `/pis/{uid}` answer 404 and name the groups through which a non-direct member still has access ([details](#removal-404-names-the-access-path)) [api, projects, clarification, autonomous]
 - Every change of `users.primary_project_id` (user create, `PATCH /users`, form approval, managed sync) is audited as `metadata_changed` with entity `user` ([details](#primary-project-changes-are-audited)) [audit, users, addition, autonomous]
 - `PATCH /users/{id}` accepts `primary_project_id` from staff (null clears it) and ignores it from a user editing themselves ([details](#patch-users-primary_project_id)) [api, users, clarification, autonomous]
@@ -62,6 +62,9 @@
 - `managed_by` is a column of `groups`, not of `group_members`: a managed sync claims the group and replaces all of its direct user members ([details](#managed_by-moves-from-memberships-to-groups)) [schema, api, managed-sync, migration, ui, deviation, hil]
 - Review fixes: submit nodes must point at a live group, primary-project audit rows name the user as member, `PUT /groups/{id}` refuses `managed_by: null`, and the PI table reads member groups through `/projects/{id}/pi_groups` ([details](#review-fixes-after-the-managed_by-move)) [api, ui, audit, submit-nodes, addition, autonomous]
 - Staff can view the site as another user through `POST /impersonate/{user_id}` and `/impersonate/stop`, only when the API runs with `ALLOW_IMPERSONATE=true`; writes are allowed and audited as the viewed user ([details](#staff-can-view-the-site-as-another-user)) [auth, api, ui, addition, hil]
+- PIs and group owners list every user (cut down to picker fields) and every live group, so they can add members; their Groups page shows the groups they are in ([details](#pis-and-group-owners-can-look-up-every-user-and-group)) [api, ui, groups, users, deviation, hil]
+- A non-staff group administrator's group page has no Details tab; links into a group send them to Members ([details](#no-details-tab-for-non-staff-group-administrators)) [ui, groups, permissions, clarification, hil]
+- Linked name cells put the link icon before the name in one column; a user's projects table links only the projects they are a PI of, and their groups table links the groups they own, with a sortable Owner check from the new `user_groups_view.is_owner` ([details](#link-icons-lead-the-name-and-follow-the-view-rule)) [ui, schema, users, projects, clarification, hil]
 
 # Detailed
 
@@ -577,15 +580,15 @@
 
 **Design says:** "Members of the pi_group edit the project's metadata"; "pi_group ... Only staff change it."
 
-**What was done:** A non-staff PI whose body names any of `pi_group_id`, `project_group_id`, `accounting_group`, `staff1`, `staff2` gets 403, whether or not the value differs from the stored one. Staff changing `pi_group_id` or `project_group_id` must name a live group (404 otherwise).
+**What was done:** A non-staff PI whose body names any of `pi_group_id`, `project_group_id`, `accounting_group`, `staff1`, `staff2`, `ticket` gets 403, whether or not the value differs from the stored one. Staff changing `pi_group_id` or `project_group_id` must name a live group (404 otherwise). The UI's project form disables the ticket field for non-staff and leaves it out of the body, as it already did for the other five.
 
-**Decided by:** Autonomous (Claude). The user was not asked.
+**Decided by:** The field-set rule and the first five fields: Autonomous (Claude), the user was not asked. `ticket`: HIL (user), 2026-11-06: "PI's shouldn't be able to write the ticket field."
 
-**Why:** Checking the field set rather than the diff keeps the rule independent of what the client last read.
+**Why:** Checking the field set rather than the diff keeps the rule independent of what the client last read. The ticket is staff's reference into their own system.
 
 **Impact:** A UI form that always sends the whole project must omit those fields for PIs.
 
-**Tags:** [permissions, projects, clarification, autonomous]
+**Tags:** [permissions, projects, clarification, hil]
 
 ## Removal 404 names the access path
 
@@ -936,3 +939,59 @@
 **Impact:** Nothing changes with the flag unset. With it set, audit rows written during a "view as" session are indistinguishable from the user's own, so it is for development and support environments only. `ALLOW_IMPERSONATE` is read per request by the API; `NEXT_PUBLIC_ALLOW_IMPERSONATE` is baked into the UI at build time (2026-11-06, user: "Make sure the UI also needs to have the ALLOW_IMPERSONATE env variable set"). Neither is documented anywhere else yet.
 
 **Tags:** [auth, api, ui, addition, hil]
+
+## PIs and group owners can look up every user and group
+
+**Design says:** The "Access management UI" section has PIs and managers adding members to their groups; the "Permissions" section gives non-staff access only to the groups they administer and says nothing about listing users. The earlier entry on group permissions made `GET /users` staff-only and `GET /groups` return only the groups a non-staff user administers, which left their "Add user" picker empty and their "Add group" picker limited to their own groups.
+
+**What was done:** A caller is a *group administrator* when staff or an effective member of some live group's owner group (`membership.administers_any_group`; PIs qualify because the pi group owns the managers group). `GET /users`: staff get the full record as before; a group administrator gets every user but only `id`, `name`, `username`, `netid`, `email1`, `active` (`UserLookupGet`) and may filter only on those columns (anything else, including inside `or=(...)`, is a 400, so hidden fields cannot be probed through filters); everyone else is still 403. `GET /groups`: a group administrator gets every live group, or only the groups they administer with `administered=true`; a user who administers nothing still gets an empty list; `include_deleted` stays staff-only. UI: the pickers are unchanged (they already read `/users` and `/groups`); the Groups page for a non-staff user now shows the groups they are in (`UserGroupTable` on `/users/{me}/groups`) with a link into the ones they administer, read from `/groups?administered=true`. Tests in `test_user_directory.py`.
+
+**Decided by:** HIL (user), 2026-11-06: "update the api to allow PIs to see all users and groups? For the Group table for PI's we should just show the groups they are in but when they go to add users and groups to groups they manage they should see them all as options." Claude's own choices, the user informed in chat: "PI" read as "administers at least one group" (covers group owners too, which the same pickers serve), the cut-down user record and the filter whitelist, `administered=true` as the switch for the table's links.
+
+**Why:** The pickers need the whole directory, and nothing in the current data model gives a PI a narrower sensible set. Returning the full user record to every group owner would hand out phone numbers and unix ids to anyone who owns a group, so the lookup is limited to what a picker shows.
+
+**Impact:** Behaviour change for non-staff callers of `GET /groups`: the plain list is now every live group, not the administered ones. Any user who owns a group can enumerate all users' names, usernames, netids and emails.
+
+**Tags:** [api, ui, groups, users, deviation, hil]
+
+## No Details tab for non-staff group administrators
+
+**Design says:** "Only staff edit group metadata" (Permissions); the "Access management UI" section describes the group page's members management for owners and says nothing about them seeing the metadata.
+
+**What was done:** `GroupShell` leaves the Details page out of a group's tabs unless the viewer is staff, and `/groups/details/?id=N`, which every link into a group points at, redirects a non-staff viewer to `/groups/members/?id=N`. The API is unchanged: `GET /groups/{id}` still answers for the group's administrators, the UI just does not present a page for it.
+
+**Decided by:** HIL (user), 2026-11-06: "Lets drop group details for non admins as well. We don't need to hide the info but we don't need to show it."
+
+**Why:** The details form is read-only for non-staff and showed nothing they act on; Members is the page they come for.
+
+**Impact:** Supersedes the Details-page part of the "canAdminister for non-staff" entry's UI description. The Access and History tabs stay for non-staff administrators.
+
+**Tags:** [ui, groups, permissions, clarification, hil]
+
+## Link icons lead the name and follow the view rule
+
+**Design says:** Silent on table layout. The "Permissions" section lets a project be viewed by staff, its PIs and its managers, which is the API's project view rule.
+
+**What was done:** `makeLinkedTextCell` (`src/components/TableCells/TableCells.tsx`) renders the link icon in a fixed-width span before the text, so the icons line up in one column whatever the name's length, and takes an optional `canOpen(row)`; a row that may not be opened keeps the space and shows no icon. A user's projects table (`UserProjectTable`, on `/users/me` and the staff user page) links a project only when the viewer is staff or the row has `is_pi`; the groups table (`UserGroupTable`, on `/users/me`, the staff user page and a non-staff user's Groups page) links a group when the viewer is staff or the row has `is_owner`. For that, `user_groups_view` gained `is_owner` (the user is an effective member of the group's owner group), which the table shows as a sortable "Owner" check column, like the projects table's PI column, and sorts on first by default (owned groups first, then by name). A group the user owns but is not in does not appear, as the table lists the groups they are in.
+
+**Decided by:** HIL (user), 2026-11-06: "On the users /me page if they are not the PI of a project remove the link. On all table please put the link before the name string but in the same cell. That way it is in the same column for every name length." and "In the /me how hard would it be to make it so I can have a similar link to all the groups I am a owner of? ... I would also like to see those groups first or have a column that indicates Owner with a check mark like the PI check that I can sort on." Putting the flag in the view (sortable server-side) instead of a second request was Claude's.
+
+**Why:** A link into a page the reader cannot open only produced the access error; the icon column keeps the names aligned.
+
+**Impact:** Managers (members of the managers group) can open a project page by the API's rule but get no link from their own projects table, since that view does not say who is a manager; they reach it from the Groups page.
+
+**Tags:** [ui, schema, users, projects, clarification, hil]
+
+## Generated project groups get a description naming the project
+
+**Design says:** The "Project" section has the migration create a pi, managers and project group per project; it says nothing about their descriptions.
+
+**What was done:** The migration (`c5e1a7d39f20`) sets `groups.description` on the three groups it creates for each project: "PIs of project <name>", "Managers of project <name>" and "Members of project <name>", using the project's name as stored.
+
+**Decided by:** HIL (user), 2026-11-06: "can you update the migration to comment for each group that is a proejct group you create: \"Members of project <x>\", and for the pi group: \"PIs of project <x>\", and finally \"Managers of project <x>\". Just to add a clear link for people first coming in."
+
+**Why:** Group names are slugified and may carry a numeric suffix, so the description is the readable link back to the project.
+
+**Impact:** Migration only. Project groups created later through the API get no description unless the caller passes one.
+
+**Tags:** [migration, groups, projects, clarification, hil]

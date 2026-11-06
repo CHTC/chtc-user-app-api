@@ -181,6 +181,8 @@ class UserGroupsView(Base):
     direct = Column(Boolean)
     paths = Column(JSONB)
     path_names = Column(JSONB)
+    # The user administers the group (effective member of its owner group)
+    is_owner = Column(Boolean)
     managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
 
     # From Group

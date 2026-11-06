@@ -44,27 +44,32 @@ async def get_groups(
     page: int = 0,
     page_size: int = 100,
     include_deleted: bool = False,
+    administered: bool = False,
     filter_query_params=Depends(get_filter_query_params),
     session=Depends(session_generator),
     is_admin=Depends(is_admin),
     user_token=Depends(get_user_from_cookie),
 ) -> list[GroupGet]:
-    """Staff list every group; everyone else only the groups they administer. Deleted groups are
-    left out unless staff ask for them."""
+    """Staff list every group. A PI or group owner lists every live group too (they pick from it
+    when adding a member group), or with administered=true only the groups they administer. A
+    user who administers nothing gets an empty list. Deleted groups are left out unless staff
+    ask for them."""
 
     if not is_admin and user_token is None:
         raise HTTPException(status_code=403, detail="User is not an admin")
 
-    # include_deleted is this route's own parameter, not a column filter
-    filter_query_params = [param for param in filter_query_params if param[0] != "include_deleted"]
+    # include_deleted and administered are this route's own parameters, not column filters
+    filter_query_params = [param for param in filter_query_params if param[0] not in ("include_deleted", "administered")]
 
     select_stmt = select(GroupTable)
     if is_admin:
         if not include_deleted:
             select_stmt = select_stmt.where(GroupTable.deleted_at.is_(None))
     else:
+        select_stmt = select_stmt.where(GroupTable.deleted_at.is_(None))
         ids = await membership.administrable_group_ids(session, user_token.user_id)
-        select_stmt = select_stmt.where(GroupTable.id.in_(ids), GroupTable.deleted_at.is_(None))
+        if administered or not ids:
+            select_stmt = select_stmt.where(GroupTable.id.in_(ids))
 
     return await list_select_stmt(
         session, select_stmt, GroupTable, response, filter_query_params, page, page_size,

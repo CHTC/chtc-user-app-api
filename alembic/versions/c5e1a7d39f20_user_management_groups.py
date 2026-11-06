@@ -119,6 +119,11 @@ NEW_VIEWS = {
             bool_or(cardinality(gem.path) = 1) AS direct,
             jsonb_agg(to_jsonb(gem.path) ORDER BY cardinality(gem.path), gem.path) AS paths,
             jsonb_agg(to_jsonb({_PATH_NAMES}) ORDER BY cardinality(gem.path), gem.path) AS path_names,
+            -- the user administers the group: an effective member of its owner group
+            EXISTS (
+                SELECT 1 FROM group_effective_members o
+                WHERE o.group_id = g.owner_group_id AND o.user_id = gem.user_id
+            ) AS is_owner,
             g.name,
             g.unix_gid,
             g.owner_group_id,
@@ -440,11 +445,14 @@ def upgrade() -> None:
 
     taken = set(bind.execute(sa.text("SELECT name FROM groups")).scalars())
 
-    def create_group(name: str, owner_group_id, project_id: int, role: str) -> int:
+    def create_group(name: str, owner_group_id, project_id: int, role: str, description: str) -> int:
         group_id = bind.execute(
             # has_groupdir is still NOT NULL here and is dropped below
-            sa.text("INSERT INTO groups (name, owner_group_id, has_groupdir) VALUES (:name, :owner, false) RETURNING id"),
-            {"name": name, "owner": owner_group_id},
+            sa.text("""
+                INSERT INTO groups (name, owner_group_id, description, has_groupdir)
+                VALUES (:name, :owner, :description, false) RETURNING id
+            """),
+            {"name": name, "owner": owner_group_id, "description": description},
         ).scalar_one()
         # One group_created audit row per generated group, written by the system (actor NULL)
         details = {
@@ -474,9 +482,16 @@ def upgrade() -> None:
 
         # pi_group has no owner, managers is owned by pi, project is owned by managers; the pi
         # group is a member of both managers and project (the design's Project section).
-        pi_id = create_group(_unique_name(taken, slug, "_pi"), None, project_id, "pi")
-        managers_id = create_group(_unique_name(taken, slug, "_managers"), pi_id, project_id, "managers")
-        project_group_id = create_group(_unique_name(taken, slug), managers_id, project_id, "project")
+        # The description names the project so anyone landing on the group sees what it is for
+        pi_id = create_group(
+            _unique_name(taken, slug, "_pi"), None, project_id, "pi", f"PIs of project {project_name}",
+        )
+        managers_id = create_group(
+            _unique_name(taken, slug, "_managers"), pi_id, project_id, "managers", f"Managers of project {project_name}",
+        )
+        project_group_id = create_group(
+            _unique_name(taken, slug), managers_id, project_id, "project", f"Members of project {project_name}",
+        )
         add_group_member(managers_id, pi_id)
         add_group_member(project_group_id, pi_id)
 

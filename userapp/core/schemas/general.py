@@ -145,6 +145,8 @@ class UserGroupsView(BaseModel):
     direct: bool
     paths: list[list[int]]
     path_names: list[list[str]]
+    # The user administers the group (effective member of its owner group)
+    is_owner: bool
 
     # From the Group table
     name: str

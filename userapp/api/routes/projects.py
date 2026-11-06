@@ -33,7 +33,7 @@ ProjectGetFull.model_rebuild(_types_namespace={'UserGet': UserGet})
 JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 # Fields only staff may change; a PI edits the rest of the project's metadata
-STAFF_ONLY_PROJECT_FIELDS = {"pi_group_id", "project_group_id", "accounting_group", "staff1", "staff2"}
+STAFF_ONLY_PROJECT_FIELDS = {"pi_group_id", "project_group_id", "accounting_group", "staff1", "staff2", "ticket"}
 
 # Staff-only routes get this per route because the viewing and editing routes below are open to
 # PIs and project administrators
@@ -162,7 +162,7 @@ async def create_project(project: ProjectPost, session=Depends(session_generator
 
 @router.put("/{project_id}", status_code=200, dependencies=[Depends(check_can_edit_project)])
 async def update_project(project_id: int, project: ProjectPatch, session=Depends(session_generator), is_admin=Depends(is_admin), user_token=Depends(get_user_from_cookie)) -> ProjectGetFull:
-    """Staff change anything; a PI changes everything but the group pointers, accounting group and staff"""
+    """Staff change anything; a PI changes everything but the group pointers, accounting group, staff and ticket"""
 
     if not is_admin and project.model_fields_set & STAFF_ONLY_PROJECT_FIELDS:
         raise HTTPException(

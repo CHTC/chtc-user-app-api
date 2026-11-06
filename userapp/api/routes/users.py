@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload
@@ -6,11 +8,12 @@ from starlette.responses import Response
 from userapp.core.schemas.groups import GroupGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin, is_admin, is_user, check_is_user, get_user_from_cookie
+from userapp.api.routes.security import check_is_admin, is_admin, is_user, check_is_user, get_user_from_cookie, \
+    is_group_administrator_of_any
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
-    RestrictedUserPatch, UserTableSchema, UserGetFull
+    RestrictedUserPatch, UserTableSchema, UserGetFull, UserLookupGet
 from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupsView as UserGroupsViewSchema
 from userapp.core.schemas.user_submit import UserSubmitGet
 from userapp.core.schemas.note import NoteGet
@@ -40,9 +43,44 @@ router = APIRouter(
 )
 
 
+# The columns a PI or group owner may see and filter on when looking users up
+_LOOKUP_COLUMNS = set(UserLookupGet.model_fields)
+
+
+def _check_lookup_filters(filter_query_params: list[tuple[str, str]]) -> None:
+    """Non-staff may filter only on the columns they can see; otherwise `phone1=like.608*`
+    would reveal what the response hides"""
+
+    for key, value in filter_query_params:
+        # or=(name.ilike.x,netid.ilike.x): the column is what precedes the first dot of each term
+        names = re.findall(r'(?:^|[(,])\s*(?:not\.)?(\w+)\.', value) if key in ("or", "and") else [key]
+        for name in names:
+            if name not in _LOOKUP_COLUMNS:
+                raise HTTPException(status_code=400, detail=f"Filtering users on {name} is for staff")
+
+
 @router.get("")
-async def get_users(response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> list[UserGetFull]:
-    return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=user_load_options)
+async def get_users(
+    response: Response,
+    page: int = 0,
+    page_size: int = 100,
+    filter_query_params=Depends(get_filter_query_params),
+    session=Depends(session_generator),
+    is_admin=Depends(is_admin),
+    is_group_administrator=Depends(is_group_administrator_of_any),
+) -> list[UserGetFull] | list[UserLookupGet]:
+    """Staff get every user in full. A PI or group owner gets every user too, but only the fields
+    needed to pick one to add to a group (id, name, username, netid, email1, active) and may filter
+    on those only. Everyone else is refused."""
+
+    if is_admin:
+        return await list_endpoint(session, UserTable, response, filter_query_params, page, page_size, load_options=user_load_options)
+    if not is_group_administrator:
+        raise HTTPException(status_code=403, detail="User is not an admin")
+
+    _check_lookup_filters(filter_query_params)
+    rows = await list_endpoint(session, UserTable, response, filter_query_params, page, page_size)
+    return [UserLookupGet.model_validate(row) for row in rows]
 
 
 @router.delete("/{user_id}", status_code=204)

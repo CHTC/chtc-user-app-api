@@ -590,6 +590,22 @@ async def is_group_administrator(session: AsyncSession, user_id: int, group_id: 
     return result is not None
 
 
+async def administers_any_group(session: AsyncSession, user_id: int) -> bool:
+    """Whether the user is an effective member of some live group's owner group: a PI (the pi
+    group owns the managers group) or any other group owner. They get to look users and groups
+    up so they can add them."""
+
+    found = await session.scalar(
+        select(Group.id).where(
+            Group.deleted_at.is_(None),
+            Group.owner_group_id.in_(
+                select(GroupEffectiveMember.group_id).where(GroupEffectiveMember.user_id == user_id)
+            ),
+        ).limit(1)
+    )
+    return found is not None
+
+
 async def administrable_group_ids(session: AsyncSession, user_id: int) -> set[int]:
     result = await session.execute(
         select(Group.id).where(

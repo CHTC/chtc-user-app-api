@@ -22,7 +22,8 @@ def project_data_f(
     ticket: Optional[int] = None,
     last_contact: Optional[datetime] = None
 ):
-    rand = random.randint(100000, 999999)
+    # Wide enough that runs against one long-lived database do not collide on projects.name
+    rand = random.randint(10**9, 10**10 - 1)
     return {
         "name": name if name else f"test-project-{rand}",
         "display_name": display_name if display_name else f"Test Project {rand}",
@@ -48,13 +49,16 @@ def user_data_f(index: int, primary_project_id=None, is_admin=False, username: O
     """
     Generate a unique user payload for testing, based on the UserBase schema.
     """
+    # The names get a wide tag so runs against one long-lived database do not collide; the
+    # unix_uid stays within the integer column
     rand = random.randint(100000, 999999)
+    tag = random.randint(10**9, 10**10 - 1)
     return {
         "name": f"User {index}",
-        "email1": f"testuser{rand}@example.com",
-        "email2": f"altuser{rand}@example.com",
-        "netid": f"netid{rand}",
-        "username": username or f"netid{rand}",
+        "email1": f"testuser{tag}@example.com",
+        "email2": f"altuser{tag}@example.com",
+        "netid": f"netid{tag}",
+        "username": username or f"netid{tag}",
         "netid_exp_datetime": datetime.now().isoformat(),
         "phone1": f"555-010{index}",
         "phone2": f"555-020{index}",

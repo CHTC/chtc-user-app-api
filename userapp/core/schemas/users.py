@@ -95,6 +95,19 @@ class UserGetFull(UserGet):
     user_forms: list["UserApplicationViewSchema"] = Field(default=[])
 
 
+class UserLookupGet(BaseModel):
+    """What GET /users shows a PI or group owner: enough to pick a user to add, nothing personal"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int
+    name: str
+    username: Optional[str] = Field(default=None)
+    netid: Optional[str] = Field(default=None)
+    email1: Optional[EmailStr] = Field(default=None)
+    active: Optional[bool] = Field(default=None)
+
+
 class MeGet(UserGetFull):
     """GET /me: the user the session runs as, and the staff member really logged in when that
     user is being viewed as (null otherwise)"""

@@ -173,7 +173,7 @@ class TestViews:
 
     def test_user_groups_view_columns(self):
         assert set(_columns('user_groups_view')) == {
-            'user_id', 'group_id', 'direct', 'paths', 'path_names',
+            'user_id', 'group_id', 'direct', 'paths', 'path_names', 'is_owner',
             'name', 'unix_gid', 'owner_group_id', 'description', 'managed_by', 'deleted_at',
         }
 

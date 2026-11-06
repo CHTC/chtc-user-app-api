@@ -317,15 +317,20 @@ class TestProjectPermissions:
         assert response.status_code == 200, response.text
         assert response.json()['description'] == "Edited by a PI"
 
-        for field, value in (("pi_group_id", None), ("project_group_id", None), ("accounting_group", "other"), ("staff1", None), ("staff2", None)):
+        for field, value in (
+            ("pi_group_id", None), ("project_group_id", None), ("accounting_group", "other"),
+            ("staff1", None), ("staff2", None), ("ticket", 4242), ("ticket", None),
+        ):
             denied = pi_client.put(f"/projects/{project['id']}", json={field: value})
             assert denied.status_code == 403, f"A PI must not change {field}: {denied.text}"
 
         unchanged = existing_admin_client.get(f"/projects/{project['id']}").json()
         assert unchanged['pi_group_id'] == project['pi_group_id'] and unchanged['accounting_group'] == project['accounting_group']
+        assert unchanged['ticket'] == project['ticket']
 
-        # Staff may change the pointers
+        # Staff may change the pointers and the ticket
         assert existing_admin_client.put(f"/projects/{project['id']}", json={"accounting_group": "staff-set"}).status_code == 200
+        assert existing_admin_client.put(f"/projects/{project['id']}", json={"ticket": 4242}).json()['ticket'] == 4242
 
     def test_put_is_audited(self, existing_admin_client, roles):
         project = roles["project"]

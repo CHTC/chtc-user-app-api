@@ -385,13 +385,18 @@ class TestOwnersAdministerGroups:
         assert client.delete(f"/groups/{base_id}/members/users/{people[2]['id']}").status_code == 403
         assert client.put(f"/groups/{base_id}", json={"description": "x"}).status_code == 403
 
-    def test_group_listing_shows_only_what_the_user_administers(self, owned, make_group, client_as):
+    def test_group_listing_for_an_owner(self, owned, make_group, client_as):
+        """An owner lists every group (to pick members from) and, with administered=true, only their own"""
         client = client_as(owned['owner'])
-        make_group()  # unrelated
+        unrelated = make_group()
 
-        listed = client.get("/groups?page_size=1000")
+        listed = client.get(f"/groups?id=ge.{owned['owners']['id']}&page_size=1000")
         assert listed.status_code == 200
-        assert [g['id'] for g in listed.json()] == [owned['base']['id']]
+        assert {owned['base']['id'], owned['owners']['id'], unrelated['id']} <= {g['id'] for g in listed.json()}
+
+        administered = client.get("/groups?administered=true&page_size=1000")
+        assert administered.status_code == 200
+        assert [g['id'] for g in administered.json()] == [owned['base']['id']]
 
     def test_removed_owner_loses_access(self, existing_admin_client, owned, client_as):
         client = client_as(owned['owner'])

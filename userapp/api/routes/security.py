@@ -18,7 +18,7 @@ from passlib.exc import UnknownHashError
 
 from userapp.api.util import get_one_endpoint
 from userapp.core.models.tables import User as UserTable, Token, Project, GroupEffectiveMember
-from userapp.core.services.membership import is_group_administrator
+from userapp.core.services.membership import administers_any_group, is_group_administrator
 from userapp.core.schemas.note import NoteGet
 from userapp.core.schemas.users import MeGet, UserGet
 from userapp.core.schemas.general import JoinedProjectView
@@ -262,6 +262,20 @@ async def check_can_administer_group(group_id: int, session=Depends(session_gene
 
 # The design lets exactly the same people view a group as administer it
 check_can_view_group = check_can_administer_group
+
+
+async def is_group_administrator_of_any(session=Depends(session_generator), is_admin=Depends(is_admin), user_token=Depends(get_user_from_cookie)) -> bool:
+    """Staff, or a user who administers at least one group (PIs and group owners): the people who
+    add members, so the ones who may look every user and group up"""
+
+    if is_admin:
+        return True
+    return user_token is not None and await administers_any_group(session, user_token.user_id)
+
+
+async def check_is_group_administrator_of_any(allowed=Depends(is_group_administrator_of_any)) -> None:
+    if not allowed:
+        raise HTTPException(status_code=403, detail="User does not administer any group")
 
 
 async def _get_project_or_404(session, project_id: int) -> Project:
