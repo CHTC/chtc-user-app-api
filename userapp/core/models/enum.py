@@ -1,9 +1,5 @@
 from enum import Enum
 
-class RoleEnum(Enum):
-    MEMBER = "MEMBER"
-    PI = "PI"
-
 class PositionEnum(Enum):
     SELECT = "SELECT"
     FACULTY = "FACULTY"
@@ -34,6 +30,15 @@ class EntityManagerEnum(Enum):
     APPLICATION = "APPLICATION" # Default - Userapp manual management
     MANIFEST = "MANIFEST" # Manifest Groups
     MORGRIDGE_AD = "MORGRIDGE_ACTIVE_DIRECTORY"
+
+class AuditActionEnum(Enum):
+    """What an audit_log row records. Names equal values: the database enum stores the name."""
+    member_added = "member_added"
+    member_removed = "member_removed"
+    group_created = "group_created"
+    group_deleted = "group_deleted"
+    owner_group_changed = "owner_group_changed"
+    metadata_changed = "metadata_changed"
 
 # I decided against using this so I could set the values in just the UI
 # Keeping it here just incase

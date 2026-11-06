@@ -2,7 +2,7 @@ from datetime import datetime
 import random
 from typing import Optional
 
-from userapp.core.models.enum import RoleEnum, PositionEnum
+from userapp.core.models.enum import PositionEnum
 from userapp.core.schemas.user_submit import UserSubmitPost
 
 
@@ -10,7 +10,6 @@ def project_data_f(
     name: Optional[str] = None,
     display_name: Optional[str] = None,
     description: Optional[str] = None,
-    pi: Optional[int] = None,
     staff1: Optional[int] = None,
     staff2: Optional[int] = None,
     status: Optional[str] = None,
@@ -28,7 +27,6 @@ def project_data_f(
         "name": name if name else f"test-project-{rand}",
         "display_name": display_name if display_name else f"Test Project {rand}",
         "description": description if description else "# Test Project\n\nA **markdown** description.",
-        "pi": pi,
         "staff1": staff1,
         "staff2": staff2,
         "status": status,
@@ -46,7 +44,7 @@ def project_data_f(
     }
 
 
-def user_data_f(index: int, primary_project_id, is_admin=False, username: Optional[str] = None, submit_node_ids: Optional[list[int]] = None) -> dict:
+def user_data_f(index: int, primary_project_id=None, is_admin=False, username: Optional[str] = None, submit_node_ids: Optional[list[int]] = None) -> dict:
     """
     Generate a unique user payload for testing, based on the UserBase schema.
     """
@@ -65,7 +63,6 @@ def user_data_f(index: int, primary_project_id, is_admin=False, username: Option
         "unix_uid": rand,
         "position": PositionEnum.GRAD_STUDENT.name,
         "primary_project_id": primary_project_id,
-        "primary_project_role": RoleEnum.MEMBER.name,
         "submit_nodes": [
             {"submit_node_id": submit_node_id} for submit_node_id in (submit_node_ids or [])
         ]

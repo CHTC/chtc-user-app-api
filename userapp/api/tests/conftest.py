@@ -48,12 +48,12 @@ async def _seed_baseline() -> None:
             # existing user's uid have a non-null value.
             if not await s.get(User, 4):
                 s.add(User(id=4, name="Seed Admin", is_admin=True, active=True, unix_uid=50000))
-            # Two groups so tests that read an existing group, reference
-            # group_id=1, or filter by has_groupdir have data present.
+            # Two groups so tests that read an existing group or reference group_id=1 have
+            # data present.
             if not await s.get(Group, 1):
-                s.add(Group(id=1, name="seed-group-dir", unix_gid=55500, has_groupdir=True))
+                s.add(Group(id=1, name="seed-group-1", unix_gid=55500))
             if not await s.get(Group, 2):
-                s.add(Group(id=2, name="seed-group-nodir", unix_gid=55501, has_groupdir=False))
+                s.add(Group(id=2, name="seed-group-2", unix_gid=55501))
             await s.flush()
             # Explicit ids do NOT advance the SERIAL sequences; bump each past
             # MAX(id) so app-created rows don't collide with the seeded ids.
@@ -63,6 +63,44 @@ async def _seed_baseline() -> None:
                     f"(SELECT COALESCE(MAX(id), 1) FROM {table}))"
                 ))
     await engine.dispose()
+
+
+def db_rows(sql: str, **params) -> list[dict]:
+    """Read-only raw SQL against the test database, for what the API does not expose"""
+
+    async def run():
+        engine = await connect_engine(_seed_db_url())
+        try:
+            async with engine.connect() as conn:
+                result = await conn.execute(text(sql), params)
+                return [dict(row._mapping) for row in result]
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
+
+
+_audit_mark = 0
+
+
+@pytest.fixture(autouse=True)
+def _remember_audit_position():
+    """The seed fixture resets id sequences, so ids (users, projects) come back in later runs
+    against the same database. Entries from earlier runs must not be mistaken for this test's."""
+
+    global _audit_mark
+    _audit_mark = db_rows("SELECT COALESCE(MAX(id), 0) AS m FROM audit_log")[0]["m"]
+    yield
+
+
+def audit_rows(where: str = "TRUE", **params) -> list[dict]:
+    """Audit entries written since the current test started"""
+
+    return db_rows(
+        "SELECT id, action::text AS action, actor_id, group_id, member_user_id, member_group_id, caused_by, details "
+        f"FROM audit_log WHERE id > :mark AND ({where}) ORDER BY id",
+        mark=_audit_mark, **params,
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -144,12 +182,13 @@ def token_client(token: dict) -> Callable[[str], TestClient]:
 
 @pytest.fixture
 def group_factory(existing_admin_client: Client) -> Callable:
-    """Fixture to create and return a group"""
+    """Fixture to create groups on demand. Extra keyword arguments go into the POST body
+    (unix_gid, description, owner_group_id, administration, ...)."""
 
-    def _create_group() -> dict:
+    def _create_group(**fields) -> dict:
         group_response = existing_admin_client.post(
             "/groups",
-            json={"name": f"Test_Group_{random.randint(1, 10000000)}"}
+            json={"name": f"Test_Group_{random.randint(1, 10000000)}", **fields}
         )
         assert group_response.status_code == 201, f"Creating a group should return a 201 status code, instead got {group_response.text}"
         return group_response.json()
@@ -163,6 +202,23 @@ def group(existing_admin_client: Client, group_factory: Callable) -> dict:
     group = group_factory()
     yield group
     existing_admin_client.delete(f"/groups/{group['id']}")
+
+
+@pytest.fixture
+def group_member(existing_admin_client: Client) -> Callable:
+    """Fixture to add a user or a group to a group, as staff. Returns the membership row.
+
+        group_member(group['id'], user_id=user['id'])
+        group_member(group['id'], member_group_id=other['id'])
+    """
+
+    def _add_member(group_id: int, user_id: Optional[int] = None, member_group_id: Optional[int] = None, **fields) -> dict:
+        body = {"user_id": user_id} if user_id is not None else {"group_id": member_group_id}
+        response = existing_admin_client.post(f"/groups/{group_id}/members", json={**body, **fields})
+        assert response.status_code == 201, f"Adding a member to a group should return a 201 status code, instead got {response.text}"
+        return response.json()
+
+    return _add_member
 
 
 @pytest.fixture
@@ -249,6 +305,42 @@ def user(existing_admin_client: Client, project_factory: Callable, group_factory
     existing_admin_client.delete(f"/users/{user['id']}")
     existing_admin_client.delete(f"/submit_nodes/{submit_node['id']}")
     existing_admin_client.delete(f"/groups/{group['id']}")
+
+
+@pytest.fixture
+def plain_user_factory(existing_admin_client: Client):
+    """Creates users that belong to no project or group, and deletes them after the test"""
+
+    created = []
+
+    def _create_user(index: int = 0, **fields) -> dict:
+        response = existing_admin_client.post("/users", json={**user_data_f(index), **fields})
+        assert response.status_code == 201, f"Creating a user should return a 201 status code instead of {response.text}"
+        created.append(response.json())
+        return created[-1]
+
+    yield _create_user
+
+    for user in created:
+        existing_admin_client.delete(f"/users/{user['id']}")
+
+
+@pytest.fixture
+def client_as():
+    """A client that is logged in as the given (non-staff) user"""
+
+    generators = []
+
+    def _make(user: dict):
+        generator = _make_auth_client({"id": user["id"], "is_admin": False})
+        client = next(generator)
+        generators.append(generator)
+        return client
+
+    yield _make
+
+    for generator in generators:
+        generator.close()
 
 
 @pytest.fixture

@@ -14,7 +14,8 @@ class ProjectTableSchema(BaseModel):
     name: str
     display_name: Optional[str] = Field(default=None)
     description: Optional[str] = Field(default=None)
-    pi: Optional[int] = Field(default=None)
+    pi_group_id: Optional[int] = Field(default=None)
+    project_group_id: Optional[int] = Field(default=None)
     staff1: Optional[int] = Field(default=None)
     staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
@@ -58,7 +59,11 @@ class ProjectPost(BaseModel):
     name: str
     display_name: Optional[str] = Field(default=None)
     description: Optional[str] = Field(default=None)
-    pi: Optional[int] = Field(default=None)
+    # When neither group is given, the pi, managers and project groups are created with the project
+    pi_group_id: Optional[int] = Field(default=None)
+    project_group_id: Optional[int] = Field(default=None)
+    # Seeded into the pi group with the project
+    pi_ids: Optional[list[int]] = Field(default=None)
     staff1: Optional[int] = Field(default=None)
     staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)
@@ -79,7 +84,8 @@ class ProjectPatch(BaseModel):
     name: Optional[str] = Field(default=None)
     display_name: Optional[str] = Field(default=None)
     description: Optional[str] = Field(default=None)
-    pi: Optional[int] = Field(default=None)
+    pi_group_id: Optional[int] = Field(default=None)
+    project_group_id: Optional[int] = Field(default=None)
     staff1: Optional[int] = Field(default=None)
     staff2: Optional[int] = Field(default=None)
     status: Optional[str] = Field(default=None)

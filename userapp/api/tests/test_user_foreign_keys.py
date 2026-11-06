@@ -44,28 +44,6 @@ class TestUserForeignKeys:
         note = get_response.json()
         _assert_user(note["author"], admin_user, "note.author")
 
-    def test_group_point_of_contact_format(self, admin_client, user):
-        """Getting a group with a point_of_contact returns a proper UserGet object"""
-
-        group_data = {
-            "name": f"test-group-poc-format-{random.randint(1, 10000)}",
-            "point_of_contact": user["id"],
-            "has_groupdir": False,
-        }
-        create_response = admin_client.post("/groups", json=group_data)
-        assert create_response.status_code == 201, (
-            f"Creating a group should return 201, got {create_response.text}"
-        )
-        group_id = create_response.json()["id"]
-
-        get_response = admin_client.get(f"/groups/{group_id}")
-        assert get_response.status_code == 200, (
-            f"Getting a group should return 200, got {get_response.text}"
-        )
-
-        group = get_response.json()
-        _assert_user(group["point_of_contact"], user, "group.point_of_contact")
-
     def test_project_staff_format(self, admin_client, user_factory, project_factory):
         """Getting a project with staff1/staff2 returns proper UserGet objects"""
 
@@ -122,35 +100,6 @@ class TestUserForeignKeys:
         note = update_response.json()
         assert note["note"] == updated_note_data["note"], "Updated note content does not match"
         _assert_user(note["author"], admin_user, "note.author")
-
-    def test_update_group_point_of_contact_format(self, admin_client, user_factory, project_factory):
-        """Updating a group's point_of_contact returns a proper UserGet object"""
-
-        project = project_factory()
-        original_poc = user_factory(0, project["id"])
-        new_poc = user_factory(1, project["id"])
-
-        group_data = {
-            "name": f"test-group-poc-update-{random.randint(1, 10000)}",
-            "point_of_contact": original_poc["id"],
-            "has_groupdir": False,
-        }
-        create_response = admin_client.post("/groups", json=group_data)
-        assert create_response.status_code == 201, (
-            f"Creating a group should return 201, got {create_response.text}"
-        )
-        group_id = create_response.json()["id"]
-
-        update_response = admin_client.put(
-            f"/groups/{group_id}",
-            json={"point_of_contact": new_poc["id"]},
-        )
-        assert update_response.status_code == 200, (
-            f"Updating a group should return 200, got {update_response.text}"
-        )
-
-        group = update_response.json()
-        _assert_user(group["point_of_contact"], new_poc, "group.point_of_contact")
 
     def test_update_project_staff_format(self, admin_client, user_factory, project_factory):
         """Updating a project's staff1/staff2 returns proper UserGet objects"""

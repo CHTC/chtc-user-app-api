@@ -6,6 +6,7 @@
 
 import urllib.parse
 from dataclasses import dataclass
+from datetime import date, datetime
 from functools import lru_cache
 from typing import Union
 
@@ -40,6 +41,10 @@ def cast_to_column_type(column: Column, value):
         # If value is a string and the column is a boolean, then cast to boolean
         if column.type.python_type == bool:
             return value.lower() == "true"
+
+        # datetime(str) is not a constructor, so timestamps are parsed from ISO 8601
+        if issubclass(column.type.python_type, (datetime, date)):
+            return column.type.python_type.fromisoformat(value)
 
         return column.type.python_type(value)
     except Exception:

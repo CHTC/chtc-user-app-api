@@ -6,26 +6,26 @@ from starlette.responses import Response
 from userapp.core.schemas.groups import GroupGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
-from userapp.api.routes.security import check_is_admin, is_admin, is_user, check_is_user
+from userapp.api.routes.security import check_is_admin, is_admin, is_user, check_is_user, get_user_from_cookie
 from userapp.api.util import list_endpoint, delete_one_endpoint, get_one_endpoint, create_one_endpoint, \
     list_select_stmt, update_one_endpoint
 from userapp.core.schemas.users import UserGet, UserPost, UserPatch, UserPostFull, UserPatchFull, \
     RestrictedUserPatch, UserTableSchema, UserGetFull
-from userapp.core.schemas.user_project import UserProjectPost, UserProjectTableSchema, UserProjectPatch
-from userapp.core.schemas.user_group import UserGroupPatch
-from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupView as UserGroupViewSchema
+from userapp.core.schemas.general import JoinedProjectView as JoinedProjectViewSchema, UserGroupsView as UserGroupsViewSchema
 from userapp.core.schemas.user_submit import UserSubmitGet
 from userapp.core.schemas.note import NoteGet
 from userapp.core.models.views import JoinedProjectView as JoinedProjectViewTable, \
-    UserSubmitView, UserGroupView as UserGroupViewTable
-from userapp.core.models.tables import User as UserTable, UserProject, Group, UserGroup, Note as NoteTable
+    UserSubmitView, UserGroupsView as UserGroupsViewTable
+from userapp.core.models.tables import User as UserTable, Project as ProjectTable, Note as NoteTable
+from userapp.core.models.enum import AuditActionEnum
+from userapp.core.services import audit, membership
 from userapp.api.load_options import user_load_options
-from userapp.api.routes._util import _patch_user_submit_nodes, _patch_user_project, _patch_user_group
+from userapp.api.routes._util import _patch_user_submit_nodes, set_primary_project
 
 # Rebuild field for those that would cause circular imports
 NoteGet.model_rebuild(_types_namespace={'UserGet': UserGet})
 JoinedProjectViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
-UserGroupViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
+UserGroupsViewSchema.model_rebuild(_types_namespace={'UserGet': UserGet})
 
 
 router = APIRouter(
@@ -56,19 +56,36 @@ async def get_user(user_id: int, session=Depends(session_generator), check_is_us
 
 
 @router.post("", status_code=201)
-async def create_user(user: UserPostFull, session=Depends(session_generator), check_is_admin=Depends(check_is_admin)) -> UserGetFull:
+async def create_user(user: UserPostFull, session=Depends(session_generator), check_is_admin=Depends(check_is_admin), user_token=Depends(get_user_from_cookie)) -> UserGetFull:
+
+    actor_id = user_token.user_id if user_token else None
+
+    # Checked before the insert so an unknown project is a 404 rather than a foreign key error
+    project = None
+    if user.primary_project_id is not None:
+        project = await get_one_endpoint(session, ProjectTable, user.primary_project_id)
+        if project.project_group_id is None:
+            raise HTTPException(status_code=400, detail=f"Project {project.id} has no project group")
 
     # Create the user
     user_data_only = UserTableSchema(**user.model_dump())
     created_user = await create_one_endpoint(session, UserTable, user_data_only, load_options=user_load_options)
     created_user_id = created_user.id
 
-    # Create the project association
-    user_project_schema = UserProjectTableSchema(project_id=user.primary_project_id, role=user.primary_project_role, is_primary=True, user_id=created_user.id)
-    await create_one_endpoint(session, UserProject, user_project_schema)
+    # Access to a project is membership in its project group; the primary project is stored on the user
+    if project is not None:
+        await membership.add_member(session, group_id=project.project_group_id, actor_id=actor_id, user_id=created_user_id)
+        # The column was written by the insert, so audit it as the change from nothing
+        await audit.log(
+            session,
+            action=AuditActionEnum.metadata_changed,
+            actor_id=actor_id,
+            member_user_id=created_user_id,
+            details={"entity": "user", "entity_id": created_user_id, "changes": {"primary_project_id": {"old": None, "new": project.id}}},
+        )
 
     # Grant access to the requested submit nodes via their associated groups
-    await _patch_user_submit_nodes(session, created_user, user.submit_nodes)
+    await _patch_user_submit_nodes(session, created_user, user.submit_nodes or [], actor_id=actor_id)
 
     await session.flush()
 
@@ -79,7 +96,7 @@ async def create_user(user: UserPostFull, session=Depends(session_generator), ch
     return created_user
 
 @router.patch("/{user_id}")
-async def update_user(user_id: int, user: UserPatchFull, session=Depends(session_generator), is_user=Depends(is_user), is_admin=Depends(is_admin)) -> UserGetFull:
+async def update_user(user_id: int, user: UserPatchFull, session=Depends(session_generator), is_user=Depends(is_user), is_admin=Depends(is_admin), user_token=Depends(get_user_from_cookie)) -> UserGetFull:
     """Update a user"""
 
     # If the user is updating themselves but is not an admin, restrict what they can update
@@ -92,14 +109,26 @@ async def update_user(user_id: int, user: UserPatchFull, session=Depends(session
     elif is_admin:
         # Update user
         user_data_only = UserPatch(**user.model_dump(exclude_unset=True))
-        updated_user = await update_one_endpoint(session, UserTable, user_id, user_data_only, load_options=user_load_options)
+        actor_id = user_token.user_id if user_token else None
+
+        # The primary project goes through the helper so the change is audited; it need not be a
+        # project the user belongs to
+        patch_data = user_data_only.model_dump(exclude_unset=True)
+        primary_sent = "primary_project_id" in patch_data
+        new_primary = patch_data.pop("primary_project_id", None)
+        if primary_sent and new_primary is not None:
+            await get_one_endpoint(session, ProjectTable, new_primary)
+        updated_user = await update_one_endpoint(session, UserTable, user_id, UserPatch(**patch_data), load_options=user_load_options)
+        if primary_sent:
+            await set_primary_project(session, updated_user, new_primary, actor_id)
 
         # Update Submit Nodes if patched
         if user.submit_nodes is not None:
-            await _patch_user_submit_nodes(session, updated_user, user.submit_nodes)
+            await _patch_user_submit_nodes(session, updated_user, user.submit_nodes, actor_id=actor_id)
 
-        # Expire the instance to force a fresh load from the database
-        session.expire(updated_user)
+        # Expire everything to force a fresh load: the view rows behind projects (is_primary) were
+        # loaded before the change and the identity map would otherwise keep them
+        session.expire_all()
         updated_user = await get_one_endpoint(session, UserTable, user_id, load_options=user_load_options)
 
         return updated_user
@@ -124,34 +153,8 @@ async def get_user_submit_nodes(user_id: int, response: Response, page: int = 0,
 
 
 @router.get("/{user_id}/groups")
-async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserGroupViewSchema]:
-    """Get groups associated with a user"""
+async def get_user_groups(user_id: int, response: Response, page: int = 0, page_size: int = 100, filter_query_params=Depends(get_filter_query_params), session=Depends(session_generator), check_is_user=Depends(check_is_user)) -> list[UserGroupsViewSchema]:
+    """Get the groups a user is an effective member of, and how"""
 
-    # Join Group to User via the UserGroups association table and filter by user_id
-    select_stmt = select(UserGroupViewTable).where(UserGroupViewTable.user_id == user_id)
-    return await list_select_stmt(session, select_stmt, UserGroupViewTable, response, filter_query_params, page, page_size)
-
-
-@router.patch("/{user_id}/projects/{project_id}")
-async def patch_user_project(
-    user_id: int,
-    project_id: int,
-    patch: UserProjectPatch,
-    session=Depends(session_generator),
-    check_is_admin=Depends(check_is_admin),
-) -> JoinedProjectViewSchema:
-    """Patch a user's membership in a project (role, is_primary, managed_by)."""
-    return await _patch_user_project(session, user_id, project_id, patch)
-
-
-@router.patch("/{user_id}/groups/{group_id}")
-async def patch_user_group(
-    user_id: int,
-    group_id: int,
-    patch: UserGroupPatch,
-    session=Depends(session_generator),
-    check_is_admin=Depends(check_is_admin),
-) -> UserGroupViewSchema:
-    """Patch a user's membership in a group (managed_by)."""
-    return await _patch_user_group(session, user_id, group_id, patch)
-
+    select_stmt = select(UserGroupsViewTable).where(UserGroupsViewTable.user_id == user_id)
+    return await list_select_stmt(session, select_stmt, UserGroupsViewTable, response, filter_query_params, page, page_size)

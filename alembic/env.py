@@ -27,8 +27,8 @@ if config.config_file_name is not None:
 # Import your Base and all models to ensure they're registered
 from userapp.core.models.main import Base
 from userapp.core.models.tables import (
-    Group, Note, Project, SubmitNode, User, UserGroup,
-    UserNote, UserProject, Token, Access
+    Group, GroupMember, GroupEffectiveMember, Note, Project, SubmitNode, User,
+    UserNote, Token, Access, AuditLog
 )
 from userapp.core.models.views import JoinedProjectView, UserSubmitView  # Import views if needed
 

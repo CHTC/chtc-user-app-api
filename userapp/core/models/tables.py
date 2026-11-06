@@ -1,34 +1,83 @@
 from typing import List, Optional
 
-from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, UniqueConstraint, \
-    func, VARCHAR, \
+from sqlalchemy import BigInteger, CheckConstraint, Column, Integer, String, Boolean, Text, TIMESTAMP, ForeignKey, \
+    UniqueConstraint, func, VARCHAR, \
     Table, Index, null
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 
-from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum, PositionEnum, HttpRequestMethodEnum, \
-    EntityManagerEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum, HttpRequestMethodEnum, \
+    EntityManagerEnum, AuditActionEnum
 from userapp.core.models.main import Base
 from userapp.core.models.views import JoinedProjectView
 from userapp.core.models.views import UserSubmitView
 from userapp.core.models.views import UserApplicationView
-from userapp.core.models.views import UserGroupView
+from userapp.core.models.views import UserGroupsView
 
 
 class Group(Base):
     __tablename__ = 'groups'
+    __table_args__ = (
+        CheckConstraint('owner_group_id IS NULL OR owner_group_id <> id', name='ck_groups_not_self_owned'),
+    )
     id = Column(Integer, primary_key=True, index=True)
     name = Column(VARCHAR(32), unique=True, nullable=False)
-    point_of_contact = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     unix_gid = Column(Integer, unique=True)
-    has_groupdir = Column(Boolean, nullable=False, default=True)
+    # NULL means only staff administer the group
+    owner_group_id = Column(Integer, ForeignKey('groups.id'), index=True)
+    description = Column(Text)
+    # Which system owns the group's user membership: a managed sync replaces it wholesale
+    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"), nullable=False, server_default=EntityManagerEnum.APPLICATION.value)
+    # Groups are never hard-deleted; see services.membership.delete_group
+    deleted_at = Column(TIMESTAMP)
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
 
-    point_of_contact_user: Mapped[Optional["User"]] = relationship(
+
+class GroupMember(Base):
+    """A direct membership: exactly one of member_user_id / member_group_id is set"""
+    __tablename__ = 'group_members'
+    __table_args__ = (
+        CheckConstraint('(member_user_id IS NULL) <> (member_group_id IS NULL)', name='ck_group_members_one_member'),
+        CheckConstraint('member_group_id IS NULL OR member_group_id <> group_id', name='ck_group_members_not_self'),
+        UniqueConstraint('group_id', 'member_user_id', name='group_members_user_distinct'),
+        UniqueConstraint('group_id', 'member_group_id', name='group_members_group_distinct'),
+        Index('ix_group_members_member_user_id', 'member_user_id'),
+        Index('ix_group_members_member_group_id', 'member_group_id'),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=False)
+    member_user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
+    member_group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'))
+    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    member_user: Mapped[Optional["User"]] = relationship(
         "User",
-        foreign_keys=[point_of_contact],
+        foreign_keys=[member_user_id],
         lazy="selectin",
     )
+    member_group: Mapped[Optional["Group"]] = relationship(
+        "Group",
+        foreign_keys=[member_group_id],
+        lazy="selectin",
+    )
+
+
+class GroupEffectiveMember(Base):
+    """Materialized flattening of group_members; rewritten by services.membership, never edited by hand"""
+    __tablename__ = 'group_effective_members'
+    __table_args__ = (
+        Index('ix_group_effective_members_user_id', 'user_id'),
+        Index('ix_group_effective_members_path', 'path', postgresql_using='gin'),
+        CheckConstraint('cardinality(path) >= 1 AND path[1] = group_id',
+                        name='ck_group_effective_members_path_root'),
+    )
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    # Group ids from group_id down to the group the user is a direct member of
+    path = Column(ARRAY(Integer), primary_key=True)
 
 
 class Note(Base):
@@ -61,7 +110,8 @@ class Project(Base):
     name = Column(String(255), nullable=False, unique=True)
     display_name = Column(String(255))
     description = Column(Text)
-    pi = Column(Integer, index=True)
+    pi_group_id = Column(Integer, ForeignKey('groups.id'), index=True)
+    project_group_id = Column(Integer, ForeignKey('groups.id'), index=True)
     staff1 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     staff2 = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     status = Column(String(255), index=True)
@@ -144,6 +194,8 @@ class User(Base):
     position = Column(SQLEnum(PositionEnum, name="position_enum"), nullable=True)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+    # Need not reference a current membership: it survives removal from the project's group
+    primary_project_id = Column(Integer, ForeignKey('projects.id', ondelete='SET NULL'), index=True)
 
     notes: Mapped[List["Note"]] = relationship(
         secondary="user_notes",
@@ -168,9 +220,9 @@ class User(Base):
         viewonly=True,
     )
 
-    groups: Mapped[List["UserGroupView"]] = relationship(
-        "UserGroupView",
-        primaryjoin="User.id==foreign(UserGroupView.user_id)",
+    groups: Mapped[List["UserGroupsView"]] = relationship(
+        "UserGroupsView",
+        primaryjoin="User.id==foreign(UserGroupsView.user_id)",
         lazy="selectin",
         viewonly=True,
     )
@@ -180,21 +232,6 @@ class User(Base):
         primaryjoin="User.id==foreign(UserApplicationView.created_by)",
         lazy="selectin",
         viewonly=True,
-    )
-
-
-class UserGroup(Base):
-    __tablename__ = 'user_groups'
-    id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey('groups.id', ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"), nullable=False, server_default=EntityManagerEnum.APPLICATION.value)
-    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'group_id', name='user_groups_distinct'),
-        Index('idx_user_group_managed_by', 'group_id', 'managed_by', 'user_id'),
     )
 
 
@@ -210,23 +247,6 @@ class UserNote(Base):
     project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False)
     note_id = Column(Integer, ForeignKey('notes.id', ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
-
-
-class UserProject(Base):
-    __tablename__ = 'user_projects'
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey('projects.id', ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    role = Column(SQLEnum(RoleEnum, name="role_enum"), nullable=True)
-    is_primary = Column(Boolean, nullable=False, default=False)
-    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"), nullable=False, server_default=EntityManagerEnum.APPLICATION.value)
-    created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'project_id', name='user_projects_distinct'),
-        Index('idx_user_project_managed_by', 'project_id', 'managed_by', 'user_id'),
-    )
 
 
 class Token(Base):
@@ -311,3 +331,31 @@ class UserForm(Base):
     __table_args__ = (
         CheckConstraint("((pi_id IS NOT NULL AND (pi_name IS NULL AND pi_email IS NULL)) OR (pi_id IS NULL AND (pi_name IS NOT NULL AND pi_email IS NOT NULL)))", name="ck_user_form_pi_info"),
     )
+
+
+class AuditLog(Base):
+    """Append-only: nothing in the application updates or deletes these rows"""
+    __tablename__ = 'audit_log'
+    __table_args__ = (
+        Index('ix_audit_log_group_id', 'group_id'),
+        Index('ix_audit_log_actor_id', 'actor_id'),
+        Index('ix_audit_log_member_user_id', 'member_user_id'),
+        Index('ix_audit_log_occurred_at', 'occurred_at'),
+    )
+    id = Column(BigInteger, primary_key=True)
+    occurred_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    actor_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
+    action = Column(SQLEnum(AuditActionEnum, name="audit_action_enum"), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id'))
+    member_user_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
+    member_group_id = Column(Integer, ForeignKey('groups.id'))
+    caused_by = Column(BigInteger, ForeignKey('audit_log.id'))
+    details = Column(JSONB)
+
+    # Read-only: the log is written through services.audit.log with plain ids
+    actor: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[actor_id], lazy="selectin", viewonly=True)
+    member_user: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[member_user_id], lazy="selectin", viewonly=True)
+    member_group: Mapped[Optional["Group"]] = relationship(
+        "Group", foreign_keys=[member_group_id], lazy="selectin", viewonly=True)

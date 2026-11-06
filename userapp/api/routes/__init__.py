@@ -10,6 +10,8 @@ from .tokens import router as tokens_router
 from .routes import router as routes_router
 from .fields_of_science import router as fields_of_science_router
 from .college_and_departments import router as college_and_departments_router
+from .audit_log import router as audit_log_router, extra_router as audit_log_extra_router
+from .unix_groups import router as unix_groups_router
 
 all_routers = [
     routes_router,
@@ -23,5 +25,8 @@ all_routers = [
     users_router,
     tokens_router,
     fields_of_science_router,
-    college_and_departments_router
+    college_and_departments_router,
+    audit_log_router,
+    unix_groups_router,
+    audit_log_extra_router,
 ]

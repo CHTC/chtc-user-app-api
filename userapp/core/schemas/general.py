@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from pydantic import BaseModel as PydanticBaseModel, ConfigDict, model_validator, Field, EmailStr, computed_field
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormStatusEnum, FormTypeEnum, EntityManagerEnum
+from userapp.core.models.enum import PositionEnum, FormStatusEnum, FormTypeEnum, EntityManagerEnum
 
 
 class BaseModel(PydanticBaseModel):
@@ -39,15 +39,18 @@ class JoinedProjectView(BaseModel):
     project_status: Optional[str] = Field(default=None)
     project_last_contact: Optional[datetime] = Field(default=None)
     project_accounting_group: Optional[str] = Field(default=None)
+    project_pi_group_id: Optional[int] = Field(default=None)
+    project_project_group_id: Optional[int] = Field(default=None)
 
-    # From the relationship
-    managed_by: EntityManagerEnum
-    created_at: datetime
-    updated_at: datetime
-
+    # From the user's direct membership in the project group; direct is False and the
+    # timestamps None when the user only has access through another group
+    direct: bool
+    created_at: Optional[datetime] = Field(default=None)
+    updated_at: Optional[datetime] = Field(default=None)
 
     is_primary: Optional[bool] = Field(default=None)
-    role: Optional[RoleEnum] = Field(default=None)
+    # Effective member of the project's pi group
+    is_pi: Optional[bool] = Field(default=None)
 
     # From the user
     name: str
@@ -114,38 +117,39 @@ class UserApplicationViewFull(UserApplicationView):
     updated_by: Optional["UserGet"] = Field(default=None, validation_alias='updated_by_user')
     pi_user: Optional["UserGet"] = Field(default=None, validation_alias='pi_user')
 
-class GroupUserView(BaseModel):
-    """Represents a user record within the context of a known group. Known Group and its relationship to a User"""
+class GroupMembersView(BaseModel):
+    """A user with access through a known group, and how: direct, or the group paths that grant it"""
 
-    # From UserGroup table
     group_id: int
     user_id: int
-    managed_by: Optional[EntityManagerEnum] = Field(default=None)
-    created_at: Optional[datetime] = Field(default=None)
-    updated_at: Optional[datetime] = Field(default=None)
-
+    direct: bool
+    # Every path from the group to the user, shortest first, as group ids and as group names
+    paths: list[list[int]]
+    path_names: list[list[str]]
 
     # From User table
     name: str
     netid: Optional[str] = Field(default=None)
     username: Optional[str] = Field(default=None)
+    email1: Optional[str] = Field(default=None)
     is_admin: Optional[bool] = Field(default=None)
     active: Optional[bool] = Field(default=None)
     unix_uid: Optional[int] = Field(default=None)
+    position: Optional[PositionEnum] = Field(default=None)
 
-class UserGroupView(BaseModel):
-    """Represents a group record in the context of a known user. Known User and its relationship to a Group"""
+class UserGroupsView(BaseModel):
+    """A group a known user is an effective member of, and how"""
 
-    # From UserGroup table
-    group_id: int
     user_id: int
-    managed_by: Optional[EntityManagerEnum] = Field(default=None)
-    created_at: Optional[datetime] = Field(default=None)
-    updated_at: Optional[datetime] = Field(default=None)
-
+    group_id: int
+    direct: bool
+    paths: list[list[int]]
+    path_names: list[list[str]]
 
     # From the Group table
     name: str
-    point_of_contact: Optional["UserGet"] = Field(default=None, validation_alias='point_of_contact_user')
     unix_gid: Optional[int] = Field(default=None)
-    has_groupdir: bool
+    owner_group_id: Optional[int] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    managed_by: EntityManagerEnum
+    deleted_at: Optional[datetime] = Field(default=None)

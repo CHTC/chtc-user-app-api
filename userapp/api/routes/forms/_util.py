@@ -3,11 +3,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from userapp.api.util import create_one_endpoint, format_escaped_template, send_email
-from userapp.core.models.enum import RoleEnum
-from userapp.core.models.tables import UserForm as UserFormTable, UserGroup, UserProject
+from userapp.core.models.tables import UserForm as UserFormTable, GroupMember, Project
 from userapp.core.schemas.user_application_form import UserFormPatch
-from userapp.core.schemas.user_project import UserProjectTableSchema
-from userapp.api.routes._util import _patch_user_submit_nodes
+from userapp.core.services import membership
+from userapp.api.routes._util import _patch_user_submit_nodes, set_primary_project
 
 CHTC_NO_REPLY_EMAIL = "no-reply@chtc.wisc.edu"
 CHTC_TICKETING_EMAIL = "chtc@cs.wisc.edu"
@@ -52,7 +51,9 @@ async def on_user_form_submit(session: AsyncSession, form_id: int, user_form: Us
         # we don't care if the email send fails
         pass
 
-async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFormPatch) -> None:
+async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFormPatch, actor_id: int | None = None) -> None:
+    """actor_id is the staff member approving the form (None for an API token)"""
+
     user_form = await session.scalar(
         select(UserFormTable)
         .where(UserFormTable.id == form_id)
@@ -84,22 +85,16 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
                 detail="project_id, user_position, and submit_nodes must be provided to accept a user form",
             )
 
-        # Clear out projects, and groups
-        await _clear_user_projects(session, user)
-        await _clear_user_groups(session, user)
-        # Add in the approved project
-        await create_one_endpoint(
-            session,
-            UserProject,
-            UserProjectTableSchema(
-                user_id=user.id,
-                project_id=form.project_id,
-                role=RoleEnum.MEMBER,
-                is_primary=True,
-            ),
-        )
+        # Clear out the user's direct group memberships (project and submit node groups alike)
+        await _clear_user_memberships(session, user, actor_id)
+        # Add in the approved project: membership of its project group, and it becomes primary
+        project = await session.get(Project, form.project_id)
+        if project is None or project.project_group_id is None:
+            raise HTTPException(status_code=400, detail=f"Project {form.project_id} not found or has no project group")
+        await membership.add_member(session, group_id=project.project_group_id, actor_id=actor_id, user_id=user.id)
+        await set_primary_project(session, user, project.id, actor_id)
         # Grant access to the approved submit nodes via their associated groups
-        await _patch_user_submit_nodes(session, user, form.submit_nodes)
+        await _patch_user_submit_nodes(session, user, form.submit_nodes, actor_id=actor_id)
 
     user.active = True
     await session.flush()
@@ -117,13 +112,9 @@ async def on_user_form_accept(session: AsyncSession, form_id: int, form: UserFor
         pass
 
 
-async def _clear_user_projects(session: AsyncSession, user) -> None:
-    await session.execute(
-        UserProject.__table__.delete().where(UserProject.user_id == user.id)
-    )
-
-
-async def _clear_user_groups(session: AsyncSession, user) -> None:
-    await session.execute(
-        UserGroup.__table__.delete().where(UserGroup.user_id == user.id)
-    )
+async def _clear_user_memberships(session: AsyncSession, user, actor_id: int | None) -> None:
+    group_ids = (await session.execute(
+        select(GroupMember.group_id).where(GroupMember.member_user_id == user.id)
+    )).scalars().all()
+    for group_id in group_ids:
+        await membership.remove_member(session, group_id=group_id, actor_id=actor_id, user_id=user.id)

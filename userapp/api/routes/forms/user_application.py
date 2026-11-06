@@ -8,12 +8,11 @@ from userapp.api.routes.security import check_is_admin, check_is_authenticated, 
 from userapp.api.util import create_one_endpoint, list_endpoint, list_select_stmt, update_one_endpoint, get_one_endpoint
 from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
 from userapp.core.models.tables import BaseForm as BaseFormTable, Project as ProjectTable, \
-    SubmitNode as SubmitNodeTable, User as UserTable, UserForm as UserFormTable, UserProject
+    SubmitNode as SubmitNodeTable, User as UserTable, UserForm as UserFormTable
 from userapp.core.models.views import UserApplicationView as UserApplicationViewTable
 from userapp.core.schemas.general import UserApplicationViewFull as UserApplicationViewFullSchema
 from userapp.core.schemas.forms import BaseFormTableSchema
 from userapp.core.schemas.user_application_form import UserFormPost, UserFormPatch, UserFormTableSchema
-from userapp.core.schemas.user_project import UserProjectTableSchema
 from userapp.core.schemas.users import UserGet
 from userapp.db import session_generator
 from userapp.query_parser import get_filter_query_params
@@ -175,7 +174,7 @@ async def update_form_status(
 
     trigger = form_triggers.get(transition_key)
     if trigger:
-        await trigger(session, base_form.id, form)
+        await trigger(session, base_form.id, form, actor_id=user_token.user_id if user_token else None)
 
     session.expire(base_form)
     user_form = await session.get(UserFormTable, form_id)

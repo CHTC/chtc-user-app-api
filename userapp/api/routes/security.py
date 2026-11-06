@@ -17,7 +17,8 @@ from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
 from userapp.api.util import get_one_endpoint
-from userapp.core.models.tables import User as UserTable, Token
+from userapp.core.models.tables import User as UserTable, Token, Project, GroupEffectiveMember
+from userapp.core.services.membership import is_group_administrator
 from userapp.core.schemas.note import NoteGet
 from userapp.core.schemas.users import UserGetFull, UserGet
 from userapp.core.schemas.general import JoinedProjectView
@@ -217,6 +218,57 @@ async def check_is_user(is_user=Depends(is_user), is_admin=Depends(is_admin)):
     """Raises error if not the user or admin, otherwise does nothing"""
 
     if not is_user and not is_admin: raise HTTPException(status_code=403, detail="Non-Admin user operating on data that doesn't belong to them.")
+
+
+async def check_can_administer_group(group_id: int, session=Depends(session_generator), is_admin=Depends(is_admin), user_token=Depends(get_user_from_cookie)) -> None:
+    """Staff, or an effective member of the group's owner_group, can edit its membership"""
+
+    if is_admin:
+        return
+    if user_token and await is_group_administrator(session, user_token.user_id, group_id):
+        return
+    raise HTTPException(status_code=403, detail="User is not an administrator of this group")
+
+
+# The design lets exactly the same people view a group as administer it
+check_can_view_group = check_can_administer_group
+
+
+async def _get_project_or_404(session, project_id: int) -> Project:
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+async def check_can_administer_project_members(project_id: int, session=Depends(session_generator), is_admin=Depends(is_admin), user_token=Depends(get_user_from_cookie)) -> None:
+    """Staff, or an administrator of the project's project_group, can edit who is in the project"""
+
+    if is_admin:
+        return
+    project = await _get_project_or_404(session, project_id)
+    if user_token and project.project_group_id is not None \
+            and await is_group_administrator(session, user_token.user_id, project.project_group_id):
+        return
+    raise HTTPException(status_code=403, detail="User is not an administrator of this project")
+
+
+async def check_can_edit_project(project_id: int, session=Depends(session_generator), is_admin=Depends(is_admin), user_token=Depends(get_user_from_cookie)) -> None:
+    """Staff, or an effective member of the project's pi_group, can edit the project's metadata"""
+
+    if is_admin:
+        return
+    project = await _get_project_or_404(session, project_id)
+    if user_token and project.pi_group_id is not None:
+        is_pi = await session.scalar(
+            select(GroupEffectiveMember.user_id).where(
+                GroupEffectiveMember.group_id == project.pi_group_id,
+                GroupEffectiveMember.user_id == user_token.user_id,
+            ).limit(1)
+        )
+        if is_pi is not None:
+            return
+    raise HTTPException(status_code=403, detail="User is not a PI of this project")
 
 
 async def is_authenticated(user_token=Depends(get_user_from_cookie), api_token=Depends(get_auth_from_api_token)):

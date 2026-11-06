@@ -18,6 +18,7 @@ from starlette.responses import JSONResponse
 
 from userapp.api.routes import all_routers
 from userapp.api.util import user_visible_db_message
+from userapp.query_parser import ParserException
 from userapp.db import (
     connect_engine,
     dispose_engine
@@ -123,6 +124,11 @@ def create_app() -> FastAPI:
         logger.error(f"Database error: {str(exc)}")
         detail = user_visible_db_message(exc) or "Database error occurred, likely due to violation of constraints."
         return JSONResponse({"detail": detail}, status_code=400)
+
+    @app.exception_handler(ParserException)
+    async def parser_error_handler(request: Request, exc: ParserException):
+        """A filter the caller wrote wrong (unknown column, bad operator, unparseable value) is their error, not a 500"""
+        return JSONResponse({"detail": f"Invalid query parameters: {exc}"}, status_code=400)
 
     @app.exception_handler(ValidationError)
     async def validation_error_handler(request: Request, exc: ValidationError):

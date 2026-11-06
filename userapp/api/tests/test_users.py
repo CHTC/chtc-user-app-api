@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from userapp.api.tests.fake_data import user_data_f
-from userapp.core.models.enum import RoleEnum
+from userapp.api.tests.conftest import db_rows, audit_rows
 from userapp.core.schemas.general import JoinedProjectView
 from userapp.core.schemas.users import UserGet, UserPost
 
@@ -304,25 +304,24 @@ class TestUsers:
 
         assert response.status_code == 200, f"Getting user groups should return a 200 status code, instead got {response.text}"
         groups = response.json()
-        assert len(groups) == 0, "User should belong to no groups"
+        # Access to the project is membership in its project group
+        assert [g['group_id'] for g in groups] == [filled_out_project['project_group_id']], "User should belong to just the project group"
+        assert groups[0]['direct'] is True
 
-    def test_get_user_groups_with_groups(self, admin_client: Client, user_factory, project_factory):
+    def test_get_user_groups_with_groups(self, admin_client: Client, user_factory, project_factory, group_factory, group_member):
         """Test getting groups for a user who belongs to groups"""
         project = project_factory()
         user = user_factory(random.randint(4001, 5000), project['id'])
 
-        # Manually add user to groups in the database for testing
-        group_ids = [1, 2]
+        group_ids = [group_factory()['id'], group_factory()['id']]
         for group_id in group_ids:
-            r = admin_client.post(f"/groups/{group_id}/users", json={"user_id": user['id']})
-            assert r.status_code == 201, f"Adding user to group {group_id} should return a 201 status code, instead got {r.text}"
+            group_member(group_id, user_id=user['id'])
 
         response = admin_client.get(f"/users/{user['id']}/groups")
 
         assert response.status_code == 200, f"Getting user groups should return a 200 status code, instead got {response.text}"
         groups = response.json()
-        assert len(groups) == len(group_ids), f"User should belong to {len(group_ids)} groups"
-        assert all(group['group_id'] in group_ids for group in groups), "User's groups should match the added groups"
+        assert {g['group_id'] for g in groups} == {*group_ids, project['project_group_id']}, "User's groups should be the added groups and the project group"
 
     def test_get_user_by_netid(self, admin_client: Client, user_factory, project_factory):
         """Test getting a user by netid"""
@@ -377,7 +376,7 @@ class TestSubmitNodeGroupMembership:
 
         assert submit_node['id'] not in self._submit_node_ids(admin_client, user['id']), "User should start without access to the submit node"
 
-        response = admin_client.post(f"/groups/{submit_node['group_id']}/users", json={"user_id": user['id']})
+        response = admin_client.post(f"/groups/{submit_node['group_id']}/members", json={"user_id": user['id']})
 
         assert response.status_code == 201, f"Adding a user to a group should return a 201 status code, instead got {response.text}"
         assert submit_node['id'] in self._submit_node_ids(admin_client, user['id']), "Group membership alone should grant access to the submit node"
@@ -388,7 +387,7 @@ class TestSubmitNodeGroupMembership:
         submit_node = create_submit_node(admin_client)
         user = user_factory(random.randint(5001, 6000), project['id'], submit_node_ids=[submit_node['id']])
 
-        response = admin_client.delete(f"/groups/{submit_node['group_id']}/users/{user['id']}")
+        response = admin_client.delete(f"/groups/{submit_node['group_id']}/members/users/{user['id']}")
 
         assert response.status_code == 204, f"Removing a user from a group should return a 204 status code, instead got {response.text}"
         assert submit_node['id'] not in self._submit_node_ids(admin_client, user['id']), "Losing the group membership should revoke access to the submit node"
@@ -408,7 +407,7 @@ class TestSubmitNodeGroupMembership:
         user = user_factory(random.randint(7001, 8000), project['id'], submit_node_ids=[submit_node['id']])
 
         # A group with no submit node attached to it - membership here is unrelated to node access
-        group_addition = admin_client.post(f"/groups/{group['id']}/users", json={"user_id": user['id']})
+        group_addition = admin_client.post(f"/groups/{group['id']}/members", json={"user_id": user['id']})
         assert group_addition.status_code == 201, f"Adding a user to a group should return a 201 status code, instead got {group_addition.text}"
 
         response = admin_client.patch(f"/users/{user['id']}", json={"submit_nodes": []})
@@ -482,7 +481,6 @@ def schema_project_view_data(**overrides):
         "email1": "test@example.com",
         "active": True,
         "netid": "testnetid",
-        "role": RoleEnum.PI,
     }
     data.update(overrides)
     return data
@@ -526,7 +524,7 @@ class TestUserAuthBehavior:
 
     def test_user_endpoints_include_auth_compatibility_fields(self, admin_client: Client, project_factory):
         project = project_factory()
-        user_payload = user_data_f(100, project["id"], username="unixuser100")
+        user_payload = user_data_f(100, project["id"], username=f"unixuser{random.randint(100000, 999999)}")
         user_payload["netid"] = f"netid{random.randint(100000, 999999)}"
         user_payload["active"] = True
 
@@ -556,10 +554,9 @@ class TestActivateWithoutPrimaryProject:
         user = existing_admin_client.post("/users", json=user_data_f(200, project["id"])).json()
         try:
             assert existing_admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
-            demote = existing_admin_client.patch(
-                f"/users/{user['id']}/projects/{project['id']}", json={"is_primary": False}
-            )
+            demote = existing_admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": None})
             assert demote.status_code == 200, demote.text
+            assert demote.json()["primary_project_id"] is None
 
             response = existing_admin_client.patch(f"/users/{user['id']}", json={"active": True})
             assert response.status_code == 200, response.text
@@ -580,14 +577,12 @@ class TestRemovePrimaryMembership:
 
         memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
         assert project_id not in [m["project_id"] for m in memberships]
+        assert existing_admin_client.get(f"/users/{user['id']}").json()["primary_project_id"] == project_id
 
     def test_delete_non_primary_membership_of_active_user_allowed(self, existing_admin_client: Client, user, project_factory):
         other = project_factory()
         try:
-            added = existing_admin_client.post(
-                f"/projects/{other['id']}/users",
-                json={"user_id": user["id"], "is_primary": False, "role": RoleEnum.MEMBER.value},
-            )
+            added = existing_admin_client.post(f"/projects/{other['id']}/users", json={"user_id": user["id"]})
             assert added.status_code == 201, added.text
 
             response = existing_admin_client.delete(f"/projects/{other['id']}/users/{user['id']}")
@@ -611,24 +606,121 @@ class TestRemovePrimaryMembership:
             response = existing_admin_client.delete(f"/projects/{project['id']}")
             assert response.status_code == 204, response.text
 
+            # The project is gone, so the user has no projects and no primary project; they stay active
             assert existing_admin_client.get(f"/users/{user['id']}/projects").json() == []
+            fetched = existing_admin_client.get(f"/users/{user['id']}").json()
+            assert fetched["primary_project_id"] is None and fetched["active"] == user["active"]
         finally:
             existing_admin_client.delete(f"/users/{user['id']}")
 
     def test_switching_primary_project_allowed(self, existing_admin_client: Client, user, project_factory):
-        """Making another project primary demotes the old one, which is not an unset of the only primary."""
+        """Making another project primary replaces the old one; membership of the old one stays."""
         old_primary_id = user["projects"][0]["project_id"]
         other = project_factory()
         try:
-            existing_admin_client.post(
-                f"/projects/{other['id']}/users",
-                json={"user_id": user["id"], "is_primary": False, "role": RoleEnum.MEMBER.value},
-            )
-            response = existing_admin_client.patch(f"/users/{user['id']}/projects/{other['id']}", json={"is_primary": True})
+            existing_admin_client.post(f"/projects/{other['id']}/users", json={"user_id": user["id"]})
+            response = existing_admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": other["id"]})
             assert response.status_code == 200, response.text
+            assert response.json()["primary_project_id"] == other["id"]
+            assert [m["project_id"] for m in response.json()["projects"] if m["is_primary"]] == [other["id"]], \
+                "The response itself must not show the old primary project"
 
             memberships = existing_admin_client.get(f"/users/{user['id']}/projects").json()
             assert [m["project_id"] for m in memberships if m["is_primary"]] == [other["id"]]
             assert old_primary_id in [m["project_id"] for m in memberships]
         finally:
             existing_admin_client.delete(f"/projects/{other['id']}")
+
+
+def _user_audit(user_id: int) -> list[dict]:
+    return [
+        r["details"] for r in audit_rows("action = 'metadata_changed'")
+        if r["details"].get("entity") == "user" and r["details"].get("entity_id") == user_id
+    ]
+
+
+class TestPrimaryProjectOnUsers:
+
+    def test_create_with_primary_project_joins_its_group_and_is_audited(self, existing_admin_client: Client, project: dict, plain_user_factory):
+        user = plain_user_factory(0, primary_project_id=project["id"])
+
+        assert user["primary_project_id"] == project["id"]
+        [joined] = user["projects"]
+        assert joined["project_id"] == project["id"] and joined["is_primary"] is True and joined["direct"] is True
+        assert [g["group_id"] for g in user["groups"]] == [project["project_group_id"]]
+        assert _user_audit(user["id"]) == [{"entity": "user", "entity_id": user["id"], "changes": {"primary_project_id": {"old": None, "new": project["id"]}}}]
+
+    def test_create_with_null_submit_nodes(self, plain_user_factory):
+        """submit_nodes is optional on creation; null means the same as an empty list"""
+        user = plain_user_factory(0, submit_nodes=None)
+        assert user["submit_nodes"] == [] and user["groups"] == []
+
+    def test_create_without_primary_project(self, plain_user_factory):
+        user = plain_user_factory(0)
+        assert user["primary_project_id"] is None and user["projects"] == [] and user["groups"] == []
+
+    def test_create_with_unknown_primary_project(self, existing_admin_client: Client):
+        assert existing_admin_client.post("/users", json=user_data_f(0, 999999999)).status_code == 404
+
+    def test_create_with_project_lacking_a_project_group(self, existing_admin_client: Client, project: dict):
+        existing_admin_client.put(f"/projects/{project['id']}", json={"project_group_id": None})
+        assert existing_admin_client.post("/users", json=user_data_f(0, project["id"])).status_code == 400
+
+    def test_patch_changes_primary_project_without_membership_and_audits(self, existing_admin_client: Client, project: dict, plain_user_factory):
+        user = plain_user_factory(0)
+
+        response = existing_admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": project["id"]})
+        assert response.status_code == 200, response.text
+        assert response.json()["primary_project_id"] == project["id"]
+        assert response.json()["projects"] == [], "The primary project does not grant membership"
+
+        # Same value again, and unrelated edits, are not audited
+        existing_admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": project["id"], "name": "Renamed"})
+        assert existing_admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": None}).status_code == 200
+
+        assert [d["changes"]["primary_project_id"] for d in _user_audit(user["id"])] == [
+            {"old": None, "new": project["id"]}, {"old": project["id"], "new": None},
+        ]
+
+    def test_patch_with_unknown_project(self, existing_admin_client: Client, plain_user_factory):
+        user = plain_user_factory(0)
+        assert existing_admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": 999999999}).status_code == 404
+
+    def test_user_cannot_change_their_own_primary_project(self, existing_admin_client: Client, project: dict, plain_user_factory, client_as):
+        user = plain_user_factory(0)
+        response = client_as(user).patch(f"/users/{user['id']}", json={"primary_project_id": project["id"], "name": "Self Edit"})
+        assert response.status_code == 200, response.text
+        assert response.json()["name"] == "Self Edit"
+        assert response.json()["primary_project_id"] is None, "Only staff set the primary project"
+
+
+class TestUserDeletion:
+
+    def test_delete_removes_every_membership_row(self, existing_admin_client: Client, project: dict, group_factory, group_member, plain_user_factory):
+        user = plain_user_factory(0, primary_project_id=project["id"])
+        other = plain_user_factory(1, primary_project_id=project["id"])
+        group = group_factory()
+        group_member(group["id"], user_id=user["id"])
+        nested = group_factory()
+        group_member(nested["id"], member_group_id=group["id"])
+        direct_before = db_rows("SELECT count(*) AS n FROM group_members WHERE member_user_id = :u", u=user["id"])[0]["n"]
+        assert direct_before == 2
+
+        assert existing_admin_client.delete(f"/users/{user['id']}").status_code == 204
+
+        assert db_rows("SELECT count(*) AS n FROM group_members WHERE member_user_id = :u", u=user["id"])[0]["n"] == 0
+        assert db_rows("SELECT count(*) AS n FROM group_effective_members WHERE user_id = :u", u=user["id"])[0]["n"] == 0, \
+            "Effective membership is cleaned by the foreign key, no recompute needed"
+        for group_id in (group["id"], nested["id"], project["project_group_id"]):
+            assert user["id"] not in {m["user_id"] for m in existing_admin_client.get(f"/groups/{group_id}/members").json()}
+        assert other["id"] in {m["user_id"] for m in existing_admin_client.get(f"/groups/{project['project_group_id']}/members").json()}, \
+            "Other users keep their access"
+
+    def test_delete_keeps_audit_entries_without_the_user(self, existing_admin_client: Client, project: dict, plain_user_factory):
+        user = plain_user_factory(0, primary_project_id=project["id"])
+        assert existing_admin_client.delete(f"/users/{user['id']}").status_code == 204
+        removed = db_rows("SELECT count(*) AS n FROM audit_log WHERE member_user_id = :u", u=user["id"])[0]["n"]
+        assert removed == 0, "The foreign key sets member_user_id to NULL; the entries themselves stay"
+
+    def test_delete_unknown_user(self, existing_admin_client: Client):
+        assert existing_admin_client.delete("/users/999999999").status_code == 404

@@ -1,4 +1,4 @@
-from sqlalchemy import Table, MetaData, Column, String, Integer
+from sqlalchemy import Table, MetaData, Column, String, Integer, TIMESTAMP
 
 import pytest
 
@@ -17,11 +17,32 @@ TEST_TABLE = Table(
     "test_table",
     MetaData(),
     Column("string_column", String),
-    Column("int_column", Integer)
+    Column("int_column", Integer),
+    Column("timestamp_column", TIMESTAMP),
 )
 
 
 class TestParser:
+
+    def test_gt_timestamp(self):
+        """Timestamps are parsed from ISO 8601 rather than passed to datetime()"""
+
+        params = {
+            "timestamp_column": "gt.2026-11-03T10:00:00"
+        }
+
+        query_parser = QueryParser(columns=TEST_TABLE.columns, query_params=params.items())
+        sql = query_parser.where_expressions()
+
+        assert compile_statement(sql) == "test_table.timestamp_column > '2026-11-03 10:00:00'"
+
+    def test_invalid_timestamp(self):
+        params = {
+            "timestamp_column": "gt.yesterday"
+        }
+
+        with pytest.raises(ParserException):
+            QueryParser(columns=TEST_TABLE.columns, query_params=params.items()).where_expressions()
 
     def test_eq(self):
         params = {

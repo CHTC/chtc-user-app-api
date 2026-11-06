@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import Field, model_validator, EmailStr
 
-from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum, RoleEnum
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, PositionEnum
 from userapp.core.schemas.general import BaseModel
 from userapp.core.schemas.users import UserGet, UserSubmitPost
 

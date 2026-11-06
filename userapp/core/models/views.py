@@ -2,9 +2,10 @@ from typing import Optional
 
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, relationship
 
-from userapp.core.models.enum import RoleEnum, PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
+from userapp.core.models.enum import PositionEnum, FormTypeEnum, FormStatusEnum, EntityManagerEnum
 from userapp.core.models.main import Base
 
 
@@ -31,6 +32,8 @@ class JoinedProjectView(Base):
     project_staff1 = Column(Integer)
     project_staff2 = Column(Integer)
     project_status = Column(String(255))
+    project_pi_group_id = Column(Integer)
+    project_project_group_id = Column(Integer)
 
     staff1_user: Mapped[Optional["User"]] = relationship(
         "User",
@@ -47,12 +50,12 @@ class JoinedProjectView(Base):
     project_last_contact = Column(TIMESTAMP)
     project_accounting_group = Column(String(255))
 
-    # From the Project -> Users ( Many )
+    # From the direct membership in the project group, NULL when access is only through another group
+    direct = Column(Boolean)
     created_at = Column(TIMESTAMP)
     updated_at = Column(TIMESTAMP)
-    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
-    role = Column(SQLEnum(RoleEnum, name="role_enum"))
     is_primary = Column(Boolean)
+    is_pi = Column(Boolean)
 
     # From the User
     name = Column(String(255))
@@ -143,51 +146,46 @@ class UserApplicationView(Base):
     )
 
 
-class GroupUserView(Base):
-    """A view intended to show a groups users in the context of a known group"""
-    __tablename__ = 'group_users'
+class GroupMembersView(Base):
+    """Every user with access through a known group, and how (the members table of every access page)"""
+    __tablename__ = 'group_members_view'
     __table_args__ = {'info': dict(is_view=True)}
 
-    # Columns from UserGroup Table
     # No ForeignKey declarations — this is a view; FK constraints don't exist on it.
     group_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, primary_key=True)
-    managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
-    created_at = Column(TIMESTAMP)
-    updated_at = Column(TIMESTAMP)
+    direct = Column(Boolean)
+    # Every path from the group to the user, shortest first, as group ids and as group names
+    paths = Column(JSONB)
+    path_names = Column(JSONB)
 
     # From User
     name = Column(String(255))
     netid = Column(String(255))
     username = Column(String(255))
+    email1 = Column(String(255))
     is_admin = Column(Boolean)
     active = Column(Boolean)
     unix_uid = Column(Integer)
+    position = Column(SQLEnum(PositionEnum, name="position_enum"))
 
 
-class UserGroupView(Base):
-    """A view intended to show a user's groups in the context of a known user"""
-    __tablename__ = 'user_group_memberships'
+class UserGroupsView(Base):
+    """Every group a known user is an effective member of, and how"""
+    __tablename__ = 'user_groups_view'
     __table_args__ = {'info': dict(is_view=True)}
 
-    # Columns from UserGroup Table
     # No ForeignKey declarations — this is a view; FK constraints don't exist on it.
-    group_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, primary_key=True)
+    direct = Column(Boolean)
+    paths = Column(JSONB)
+    path_names = Column(JSONB)
     managed_by = Column(SQLEnum(EntityManagerEnum, name="entity_manager_enum"))
-    created_at = Column(TIMESTAMP)
-    updated_at = Column(TIMESTAMP)
 
     # From Group
     name = Column(String(255))
-    point_of_contact = Column(Integer)
     unix_gid = Column(Integer)
-    has_groupdir = Column(Boolean)
-
-    point_of_contact_user: Mapped[Optional["User"]] = relationship(
-        "User",
-        primaryjoin="UserGroupView.point_of_contact==foreign(User.id)",
-        lazy="selectin",
-        viewonly=True,
-        foreign_keys="[UserGroupView.point_of_contact]",
-    )
+    owner_group_id = Column(Integer)
+    description = Column(String)
+    deleted_at = Column(TIMESTAMP)

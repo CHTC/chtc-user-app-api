@@ -3,12 +3,12 @@ from typing import Optional, Annotated
 from datetime import datetime
 import re
 
-from userapp.core.schemas.general import JoinedProjectView, UserApplicationView as UserApplicationViewSchema, UserGroupView
+from userapp.core.schemas.general import JoinedProjectView, UserApplicationView as UserApplicationViewSchema, UserGroupsView
 from userapp.core.schemas.note import NoteGet
 from userapp.core.schemas.user_submit import UserSubmitGet, UserSubmitPost
 from userapp.core.schemas.general import BaseModel
 from userapp.core.schemas.groups import GroupGet
-from userapp.core.models.enum import RoleEnum, PositionEnum
+from userapp.core.models.enum import PositionEnum
 
 
 class UserTableSchema(BaseModel):
@@ -32,6 +32,7 @@ class UserTableSchema(BaseModel):
     position: Optional[PositionEnum] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
+    primary_project_id: Optional[int] = Field(default=None)
 
 
 
@@ -85,10 +86,12 @@ class UserGet(BaseModel):
 
 class UserGetFull(UserGet):
 
+    # Survives removal from the project's group, so it need not match an entry in projects
+    primary_project_id: Optional[int] = Field(default=None)
     notes: list["NoteGet"] = Field(default=[])
     submit_nodes: list["UserSubmitGet"] = Field(default=[])
     projects: list["JoinedProjectView"] = Field(default=[])
-    groups: list["UserGroupView"] = Field(default=[])
+    groups: list["UserGroupsView"] = Field(default=[])
     user_forms: list["UserApplicationViewSchema"] = Field(default=[])
 
 class UserPost(BaseModel):
@@ -117,8 +120,8 @@ class UserPost(BaseModel):
 
 class UserPostFull(UserPost):
 
-    primary_project_id: int
-    primary_project_role: RoleEnum
+    # When given, the user is added to that project's project group
+    primary_project_id: Optional[int] = Field(default=None)
     submit_nodes: Optional[list["UserSubmitPost"]] = Field(default=[])
 
 
@@ -138,6 +141,8 @@ class UserPatch(BaseModel):
     active: Optional[bool] = Field(default=None)
     unix_uid: Optional[int] = Field(default=None)
     position: Optional[PositionEnum] = Field(default=None)
+    # Staff only: a user changing themselves goes through RestrictedUserPatch, which drops it
+    primary_project_id: Optional[int] = Field(default=None)
 
 
 

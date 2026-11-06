@@ -1,18 +1,50 @@
+from datetime import datetime
+from enum import Enum
+
 from fastapi import HTTPException
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from userapp.core.models.tables import User, UserProject, UserGroup, SubmitNode
-from userapp.core.models.views import JoinedProjectView, UserGroupView
-from userapp.core.schemas.user_project import UserProjectPatch
-from userapp.core.schemas.user_group import UserGroupPatch
+from userapp.core.models.enum import AuditActionEnum
+from userapp.core.models.tables import User, GroupMember, SubmitNode
 from userapp.core.schemas.user_submit import UserSubmitPost
+from userapp.core.services import audit, membership
+
+
+def json_value(value):
+    """Audit details are JSONB, which has neither datetime nor enum"""
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    return value
+
+
+async def set_primary_project(session: AsyncSession, user: User, project_id: int | None, actor_id: int | None) -> None:
+    """Sets users.primary_project_id and audits the change. The primary project need not match a
+    current membership, so nothing else changes. The user is the entry's member so it shows up on
+    their own log."""
+
+    old = user.primary_project_id
+    if old == project_id:
+        return
+    user.primary_project_id = project_id
+    await session.flush()
+    await audit.log(
+        session,
+        action=AuditActionEnum.metadata_changed,
+        actor_id=actor_id,
+        member_user_id=user.id,
+        details={"entity": "user", "entity_id": user.id, "changes": {"primary_project_id": {"old": old, "new": project_id}}},
+    )
 
 
 async def _patch_user_submit_nodes(
     session: AsyncSession,
     user: User,
     new_submit_nodes: list[UserSubmitPost],
+    actor_id: int | None = None,
 ) -> None:
     """Ensures the user's group memberships match the requested submit nodes. Submit node
     access is derived from group membership (SubmitNode.group_id), so granting/revoking a
@@ -46,100 +78,19 @@ async def _patch_user_submit_nodes(
         select(SubmitNode.group_id).where(SubmitNode.group_id.isnot(None))
     )).scalars().all())
 
+    # Only direct memberships are this function's to change; access the user has through
+    # another group is not touched.
     current_group_ids = set((await session.execute(
-        select(UserGroup.group_id).where(UserGroup.user_id == user.id)
+        select(GroupMember.group_id).where(GroupMember.member_user_id == user.id)
     )).scalars().all())
 
     to_add = target_group_ids - current_group_ids
     to_remove = (current_group_ids & submit_node_group_ids) - target_group_ids
 
     for group_id in to_add:
-        session.add(UserGroup(user_id=user.id, group_id=group_id))
+        await membership.add_member(session, group_id=group_id, actor_id=actor_id, user_id=user.id)
 
-    if to_remove:
-        await session.execute(
-            delete(UserGroup).where(
-                UserGroup.user_id == user.id,
-                UserGroup.group_id.in_(to_remove),
-            )
-        )
+    for group_id in to_remove:
+        await membership.remove_member(session, group_id=group_id, actor_id=actor_id, user_id=user.id)
 
     await session.flush()
-
-
-async def _patch_user_project(
-    session: AsyncSession,
-    user_id: int,
-    project_id: int,
-    patch: UserProjectPatch,
-) -> JoinedProjectView:
-    """Patch the UserProject row identified by (user_id, project_id) and return
-    the matching row from the joined_projects view. Raises 404 if no such
-    membership exists."""
-
-    row = await session.scalar(
-        select(UserProject).where(
-            UserProject.user_id == user_id,
-            UserProject.project_id == project_id,
-        )
-    )
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"User {user_id} is not a member of project {project_id}",
-        )
-
-    # Iterate set fields and copy native Python values (e.g. Enum members)
-    # straight to the ORM row. Avoid model_dump() here: model_dump() runs any
-    # @field_serializer on the schema, which can downgrade an Enum member to
-    # its .value string and break SQLAlchemy's name-based enum binding (the
-    # Postgres entity_manager_enum type stores .name, not .value).
-    for key in patch.model_fields_set:
-        setattr(row, key, getattr(patch, key))
-    await session.flush()
-
-    view_row = await session.scalar(
-        select(JoinedProjectView).where(
-            JoinedProjectView.id == user_id,
-            JoinedProjectView.project_id == project_id,
-        )
-    )
-    return view_row
-
-
-async def _patch_user_group(
-    session: AsyncSession,
-    user_id: int,
-    group_id: int,
-    patch: UserGroupPatch,
-) -> UserGroupView:
-    """Patch the UserGroup row identified by (user_id, group_id) and return the
-    matching row from the user_group_memberships view. Raises 404 if no such
-    membership exists."""
-
-    row = await session.scalar(
-        select(UserGroup).where(
-            UserGroup.user_id == user_id,
-            UserGroup.group_id == group_id,
-        )
-    )
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"User {user_id} is not a member of group {group_id}",
-        )
-
-    # See note in _patch_user_project: avoid model_dump() so Enum members are
-    # passed to SQLAlchemy as members (bound by .name) rather than as their
-    # serialized .value strings.
-    for key in patch.model_fields_set:
-        setattr(row, key, getattr(patch, key))
-    await session.flush()
-
-    view_row = await session.scalar(
-        select(UserGroupView).where(
-            UserGroupView.user_id == user_id,
-            UserGroupView.group_id == group_id,
-        )
-    )
-    return view_row

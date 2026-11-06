@@ -6,7 +6,8 @@ import pytest
 from httpx import Client
 from starlette.testclient import TestClient
 from userapp.api.routes import forms as forms_routes
-from userapp.core.models.enum import FormStatusEnum, FormTypeEnum, RoleEnum
+from userapp.api.tests.conftest import audit_rows
+from userapp.core.models.enum import FormStatusEnum, FormTypeEnum
 from userapp.api.tests.fake_data import user_form_data_f, user_form_approval_data_f
 from userapp.api.tests.conftest import _make_auth_client
 
@@ -452,8 +453,9 @@ class TestPreserveExistingData:
         user_post_approval = user_post_approval_response.json()
 
         assert user_post_approval["active"]
-        # The user's only group membership now comes from the approved submit node's group
-        assert len(user_post_approval["groups"]) == 1, "User should have exactly the approved submit node's group post approval when preserve_existing_data is False"
+        # The user's only group memberships now are the approved project's group and the approved submit node's group
+        assert {g["group_id"] for g in user_post_approval["groups"]} == {original_project["project_group_id"], original_submit_node["group_id"]}, "User should have exactly the approved groups post approval when preserve_existing_data is False"
+        assert user_post_approval["primary_project_id"] == original_project["id"], "The approved project becomes the primary project"
         assert len(user_post_approval["projects"]) == 1, "User should have exactly 1 project post approval when preserve_existing_data is False"
         assert user_post_approval["projects"][0]["project_id"] == original_project["id"], "User's project should be the approved project post approval when preserve_existing_data is False"
         assert len(user_post_approval["submit_nodes"]) == 1, "User should have exactly 1 submit node post approval when preserve_existing_data is False"
@@ -472,9 +474,8 @@ class TestPreserveExistingData:
     ):
         """Approving with preserve_existing_data activates a user even if they have no primary project."""
 
-        project_id = user["projects"][0]["project_id"]
         assert admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
-        unset = admin_client.patch(f"/users/{user['id']}/projects/{project_id}", json={"is_primary": False})
+        unset = admin_client.patch(f"/users/{user['id']}", json={"primary_project_id": None})
         assert unset.status_code == 200, unset.text
 
         create_response = nonadmin_client.post("/forms/user-applications", json=user_form_data_f())
@@ -532,6 +533,63 @@ class TestPreserveExistingData:
         # Check the new projects didn't collide with the old somehow
         assert user_post_approval["projects"][0]["project_id"] != original_project["id"]
         assert user_post_approval["submit_nodes"][0]["name"] != original_submit_node["name"]
+
+
+class TestApprovalMembership:
+
+    def _approve(self, nonadmin_client, admin_client, user, project, submit_nodes, **fields):
+        form_id = nonadmin_client.post("/forms/user-applications", json=user_form_data_f()).json()["id"]
+        response = admin_client.patch(
+            f"/forms/user-applications/{form_id}",
+            json={**user_form_approval_data_f(project["id"], submit_nodes), "status": "APPROVED", **fields},
+        )
+        assert response.status_code == 200, response.text
+
+    def test_approval_removes_old_memberships_and_audits_them(self, nonadmin_client, admin_client, admin_user, project_factory, user):
+        old_project_group = user["projects"][0]["project_project_group_id"]
+        old_submit_group = user["groups"][0]["group_id"] if user["groups"][0]["group_id"] != old_project_group else user["groups"][1]["group_id"]
+        assert admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
+        project = project_factory()
+        new_node = create_submit_node(admin_client)
+
+        self._approve(nonadmin_client, admin_client, user, project, [{"submit_node_id": new_node["id"]}])
+
+        after = admin_client.get(f"/users/{user['id']}").json()
+        assert {g["group_id"] for g in after["groups"]} == {project["project_group_id"], new_node["group_id"]}
+        assert after["primary_project_id"] == project["id"]
+        assert [n["id"] for n in after["submit_nodes"]] == [new_node["id"]]
+
+        removed = {r["group_id"] for r in audit_rows("action = 'member_removed' AND member_user_id = :u", u=user["id"])}
+        assert {old_project_group, old_submit_group} <= removed, "Dropped memberships go through remove_member, so they are audited"
+
+        changed = [r["details"] for r in audit_rows(
+            "action = 'metadata_changed' AND details->>'entity' = 'user' AND (details->>'entity_id')::int = :u", u=user["id"])][-1]
+        assert changed["changes"]["primary_project_id"]["new"] == project["id"]
+        actors = {r["actor_id"] for r in audit_rows("action = 'member_added' AND member_user_id = :u AND group_id = :g", u=user["id"], g=project["project_group_id"])}
+        assert actors == {admin_user["id"]}, "The approving staff member is the actor"
+
+    def test_approval_drops_direct_memberships_of_unrelated_groups(self, nonadmin_client, admin_client, project_factory, user, group, group_member):
+        parent = admin_client.post("/groups", json={"name": f"parent_{group['id']}"}).json()
+        group_member(parent["id"], member_group_id=group["id"])
+        group_member(group["id"], user_id=user["id"])
+        assert admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
+
+        self._approve(nonadmin_client, admin_client, user, project_factory(), [{"submit_node_id": create_submit_node(admin_client)["id"]}])
+
+        after = admin_client.get(f"/users/{user['id']}").json()
+        assert group["id"] not in {g["group_id"] for g in after["groups"]}, "Direct memberships are all replaced"
+        assert parent["id"] not in {g["group_id"] for g in after["groups"]}
+
+    def test_preserve_existing_data_changes_no_membership(self, nonadmin_client, admin_client, project_factory, user):
+        assert admin_client.patch(f"/users/{user['id']}", json={"active": False}).status_code == 200
+        before = admin_client.get(f"/users/{user['id']}").json()
+
+        self._approve(nonadmin_client, admin_client, user, project_factory(), [{"submit_node_id": create_submit_node(admin_client)["id"]}], preserve_existing_data=True)
+
+        after = admin_client.get(f"/users/{user['id']}").json()
+        assert after["active"] is True
+        assert {g["group_id"] for g in after["groups"]} == {g["group_id"] for g in before["groups"]}
+        assert after["primary_project_id"] == before["primary_project_id"]
 
 
 class TestUserFormTriggers:
