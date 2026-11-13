@@ -1,6 +1,8 @@
 # Local development database. Each developer gets their own Postgres; nothing here touches a shared DB.
 #
 #   docker compose up -d                                         start the DB, migrate it to this branch's head, seed user 4
+#   docker compose run --rm db-restore && docker compose run --rm db-init
+#                                                                replace the DB with snapshots/snapshot.dump, then migrate and seed
 #   docker compose down -v                                       delete the DB (next `up` starts empty again)
 #
 # Run the API on the host with `cp example.env .env` and `python -m userapp.main`; it connects to localhost:5434.
@@ -41,6 +43,28 @@ services:
       <<: *db-credentials
       PYTHON_ENV: development
     command: sh -c "alembic upgrade head && python -m userapp.dev_seed"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Replaces the local DB with a pg_dump custom-format snapshot (pg_dump -F c). Only runs when asked for.
+  # Put the file at snapshots/snapshot.dump, or pass SNAPSHOT=<file name in snapshots/>.
+  db-restore:
+    image: postgres:17
+    profiles: ["restore"]
+    volumes:
+      - ./snapshots:/snapshots:ro
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      SNAPSHOT: ${SNAPSHOT:-snapshot.dump}
+    # --no-owner/--no-acl: the source cluster's roles don't exist locally
+    command: >
+      sh -c 'test -f "/snapshots/$$SNAPSHOT" || { echo "snapshots/$$SNAPSHOT not found"; exit 1; };
+      dropdb --force --if-exists chtc-userapp &&
+      createdb chtc-userapp &&
+      pg_restore --no-owner --no-acl -d chtc-userapp "/snapshots/$$SNAPSHOT"'
     depends_on:
       db:
         condition: service_healthy
