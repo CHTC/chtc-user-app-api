@@ -3,6 +3,3 @@ __pycache__/
 .venv
 .idea
 transition/local_dev_mysql/chtc_db.sql
-# Database snapshots hold real user data: never commit them
-snapshots/*
-!snapshots/.gitkeep
