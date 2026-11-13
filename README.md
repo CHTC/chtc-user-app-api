@@ -95,11 +95,10 @@ To start over from an empty database, run `docker compose down -v`, then `docker
 
 #### Loading a snapshot
 
-Snapshots are `pg_dump -F c` files of a real database. They hold real user data, so get them through the team's approved channel and never commit them (`snapshots/` is git-ignored).
+Snapshots are `pg_dump -F c` files of a real database. They hold real user data, so get them through the team's approved channel and keep them outside the repo. Point `SNAPSHOT` at the file's absolute path, wherever it is:
 
 ```
-cp <snapshot file> snapshots/snapshot.dump
-docker compose run --rm db-restore && docker compose run --rm db-init
+SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose run --rm db-init
 ```
 
-This replaces your local database with the snapshot, then migrates it to your branch's head. The file is never changed, so run it again any time to get back to the same data. Use `SNAPSHOT=<file name> docker compose run --rm db-restore` for a file with another name in `snapshots/`. The snapshot must come from a database at a revision that exists on `main`, and the local Postgres (17, matching production) must be at least as new as the server it was dumped from.
+This replaces your local database with the snapshot, then migrates it to your branch's head. The file is never changed, so run it again any time to get back to the same data. The snapshot must come from a database at a revision that exists on `main`, and the local Postgres (17, matching production) must be at least as new as the server it was dumped from.
