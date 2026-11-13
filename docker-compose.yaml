@@ -1,7 +1,7 @@
 # Local development database. Each developer gets their own Postgres; nothing here touches a shared DB.
 #
 #   docker compose up -d                                         start the DB, migrate it to this branch's head, seed user 4
-#   SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose run --rm db-init
+#   SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose up -d
 #                                                                replace the DB with that snapshot file, then migrate and seed
 #   docker compose down -v                                       delete the DB (next `up` starts empty again)
 #
@@ -31,7 +31,7 @@ services:
       interval: 2s
       retries: 30
 
-  # Migrates the DB to the checked-out branch's head and seeds the dev admin user, then exits
+  # Migrates the DB to the checked-out branch's head, then exits. Runs on every `docker compose up`.
   db-init:
     build: .
     volumes:
@@ -42,10 +42,28 @@ services:
     environment:
       <<: *db-credentials
       PYTHON_ENV: development
-    command: sh -c "alembic upgrade head && python -m userapp.dev_seed"
+    command: alembic upgrade head
     depends_on:
       db:
         condition: service_healthy
+
+  # Adds admin user 4, the user the UI's dev login token points at, unless it already exists
+  # (a restored snapshot has its own user 4, which is left alone). Runs after every migration, then exits.
+  db-seed:
+    image: postgres:17
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: chtc-userapp
+    # setval: an explicit id doesn't advance the SERIAL sequence; move it past MAX(id) so new users don't collide
+    command: >
+      psql -v ON_ERROR_STOP=1 -c "INSERT INTO users (id, name, is_admin, active, unix_uid)
+      VALUES (4, 'Local Dev Admin', true, true, 50000) ON CONFLICT (id) DO NOTHING;
+      SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users));"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
 
   # Replaces the local DB with a pg_dump custom-format snapshot (pg_dump -F c). Only runs when asked for.
   # SNAPSHOT is the file's absolute path, wherever it is kept; the file is mounted read-only and never copied.
