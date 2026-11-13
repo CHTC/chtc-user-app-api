@@ -78,3 +78,17 @@ make test PYTHON=python
 ```
 
 On Windows, the virtualenv interpreter lives at `.venv/Scripts/python.exe` rather than `.venv/bin/python` 
+
+### Local development database
+
+Each developer runs their own Postgres in Docker instead of sharing one, so migrations and test data never collide.
+
+```
+cp example.env .env
+docker compose up -d
+python -m userapp.main
+```
+
+`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. The API serves on port 1111. Run `docker compose run --rm db-init` again after switching branches to migrate and reseed.
+
+To start over from an empty database, run `docker compose down -v`, then `docker compose up -d`.

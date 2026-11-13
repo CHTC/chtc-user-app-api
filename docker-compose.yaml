@@ -1,0 +1,49 @@
+# Local development database. Each developer gets their own Postgres; nothing here touches a shared DB.
+#
+#   docker compose up -d                                         start the DB, migrate it to this branch's head, seed user 4
+#   docker compose down -v                                       delete the DB (next `up` starts empty again)
+#
+# Run the API on the host with `cp example.env .env` and `python -m userapp.main`; it connects to localhost:5434.
+
+x-db-credentials: &db-credentials
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: chtc-userapp
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chtc-userapp
+    ports:
+      # 5432 is left free for a port-forward to a shared DB; `make test` uses 5433
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - userapp-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "chtc-userapp"]
+      interval: 2s
+      retries: 30
+
+  # Migrates the DB to the checked-out branch's head and seeds the dev admin user, then exits
+  db-init:
+    build: .
+    volumes:
+      # Mount the working tree so migrations match the current branch, not the image's copy
+      - ./userapp:/app/userapp:ro
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+    environment:
+      <<: *db-credentials
+      PYTHON_ENV: development
+    command: sh -c "alembic upgrade head && python -m userapp.dev_seed"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  userapp-db:
