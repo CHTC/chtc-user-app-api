@@ -1,0 +1,91 @@
+# Local development database. Each developer gets their own Postgres; nothing here touches a shared DB.
+#
+#   docker compose up -d                                         start the DB, migrate it to this branch's head, seed user 4
+#   SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose up -d
+#                                                                replace the DB with that snapshot file, then migrate and seed
+#   docker compose down -v                                       delete the DB (next `up` starts empty again)
+#
+# Run the API on the host with `cp example.env .env` and `python -m userapp.main`; it connects to localhost:5434.
+
+x-db-credentials: &db-credentials
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: chtc-userapp
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chtc-userapp
+    ports:
+      # 5432 is left free for a port-forward to a shared DB; `make test` uses 5433
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - userapp-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "chtc-userapp"]
+      interval: 2s
+      retries: 30
+
+  # Migrates the DB to the checked-out branch's head, then exits. Runs on every `docker compose up`.
+  db-init:
+    build: .
+    volumes:
+      # Mount the working tree so migrations match the current branch, not the image's copy
+      - ./userapp:/app/userapp:ro
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+    environment:
+      <<: *db-credentials
+      PYTHON_ENV: development
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Adds admin user 4, the user the UI's dev login token points at, unless it already exists
+  # (a restored snapshot has its own user 4, which is left alone). Runs after every migration, then exits.
+  db-seed:
+    image: postgres:17
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: chtc-userapp
+    # setval: an explicit id doesn't advance the SERIAL sequence; move it past MAX(id) so new users don't collide
+    command: >
+      psql -v ON_ERROR_STOP=1 -c "INSERT INTO users (id, name, is_admin, active, unix_uid)
+      VALUES (4, 'Local Dev Admin', true, true, 50000) ON CONFLICT (id) DO NOTHING;
+      SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users));"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  # Replaces the local DB with a pg_dump custom-format snapshot (pg_dump -F c). Only runs when asked for.
+  # SNAPSHOT is the file's absolute path, wherever it is kept; the file is mounted read-only and never copied.
+  db-restore:
+    image: postgres:17
+    profiles: ["restore"]
+    volumes:
+      # /dev/null when unset, so other compose commands work without SNAPSHOT; the command below rejects it
+      - ${SNAPSHOT:-/dev/null}:/snapshot.dump:ro
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    # --no-owner/--no-acl: the source cluster's roles don't exist locally
+    command: >
+      sh -c 'test -s /snapshot.dump || { echo "Set SNAPSHOT to the absolute path of the snapshot file"; exit 1; };
+      dropdb --force --if-exists chtc-userapp &&
+      createdb chtc-userapp &&
+      pg_restore --no-owner --no-acl -d chtc-userapp /snapshot.dump'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  userapp-db:
