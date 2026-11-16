@@ -80,18 +80,35 @@ services:
     image: *postgres-image
     profiles: ["restore"]
     volumes:
-      # /dev/null when unset, so other compose commands work without SNAPSHOT; the command below rejects it
-      - ${SNAPSHOT:-/dev/null}:/snapshot.dump:ro
+      # /dev/null when unset, so other compose commands work without SNAPSHOT; the command below rejects it.
+      # create_host_path: false makes a mistyped path an error instead of a new empty directory.
+      - type: bind
+        source: ${SNAPSHOT:-/dev/null}
+        target: /snapshot.dump
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       PGHOST: db
       PGUSER: postgres
       PGPASSWORD: postgres
+    # Checks the file is a dump before touching anything, then restores into a scratch DB and swaps it in,
+    # so a bad file or a failed restore leaves the current DB as it was.
     # --no-owner/--no-acl: the source cluster's roles don't exist locally
-    command: >
-      sh -c 'test -s /snapshot.dump || { echo "Set SNAPSHOT to the absolute path of the snapshot file"; exit 1; };
-      dropdb --force --if-exists chtc-userapp &&
-      createdb chtc-userapp &&
-      pg_restore --no-owner --no-acl -d chtc-userapp /snapshot.dump'
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if ! test -f /snapshot.dump || ! pg_restore -l /snapshot.dump >/dev/null; then
+          echo "SNAPSHOT must be the absolute path of a pg_dump -F c file; the database was not changed"
+          exit 1
+        fi
+        dropdb --if-exists chtc-userapp-restore
+        createdb chtc-userapp-restore
+        pg_restore --no-owner --no-acl --exit-on-error -d chtc-userapp-restore /snapshot.dump
+        dropdb --force --if-exists chtc-userapp
+        psql -v ON_ERROR_STOP=1 -d postgres -c 'ALTER DATABASE "chtc-userapp-restore" RENAME TO "chtc-userapp"'
     depends_on:
       db:
         condition: service_healthy
