@@ -64,11 +64,12 @@ services:
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: chtc-userapp
-    # setval: an explicit id doesn't advance the SERIAL sequence; move it past MAX(id) so new users don't collide
+    # setval: an explicit id doesn't advance the SERIAL sequence; move it past MAX(id) so new users don't collide,
+    # but never backwards (a snapshot's sequence can be past MAX(id) when users were deleted)
     command: >
       psql -v ON_ERROR_STOP=1 -c "INSERT INTO users (id, name, is_admin, active, unix_uid)
       VALUES (4, 'Local Dev Admin', true, true, 50000) ON CONFLICT (id) DO NOTHING;
-      SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users));"
+      SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), (SELECT last_value FROM users_id_seq)));"
     depends_on:
       db-init:
         condition: service_completed_successfully
