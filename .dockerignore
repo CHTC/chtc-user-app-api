@@ -1,4 +1,6 @@
-.env
-.venv
-.git
-.idea
+# Send only what the Dockerfile copies, so local files (.env, snapshots, exports) never enter the build context
+*
+!requirements.txt
+!userapp
+!alembic
+!alembic.ini
