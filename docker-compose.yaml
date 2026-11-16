@@ -40,6 +40,8 @@ services:
   # Migrates the DB to the checked-out branch's head, then exits. Runs on every `docker compose up`.
   db-init:
     build: .
+    # Rebuild on every `up` (cached unless requirements.txt changed) so migrations run with this branch's packages
+    pull_policy: build
     volumes:
       # Mount the working tree so migrations match the current branch, not the image's copy
       - ./userapp:/app/userapp:ro
