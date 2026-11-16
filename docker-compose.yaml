@@ -1,6 +1,6 @@
 # Local development database. Each developer gets their own Postgres; nothing here touches a shared DB.
 #
-#   docker compose up -d                                         start the DB, migrate it to this branch's head, seed user 4
+#   docker compose up -d && docker compose wait db-seed          start the DB, migrate it to this branch's head, seed user 4
 #   SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose up -d
 #                                                                replace the DB with that snapshot file, then migrate and seed
 #   docker compose down -v                                       delete the DB (next `up` starts empty again)

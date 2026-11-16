@@ -85,20 +85,20 @@ Each developer runs their own Postgres in Docker instead of sharing one, so migr
 
 ```
 cp example.env .env
-docker compose up -d
+docker compose up -d && docker compose wait db-seed
 python -m userapp.main
 ```
 
-`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. The API serves on port 1111. Every checkout and worktree of this repo shares the same database. Run `docker compose up -d` again after switching branches to migrate to the new branch's head.
+`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. `docker compose wait db-seed` fails if seeding failed, which `up -d` alone does not report. The API serves on port 1111. Every checkout and worktree of this repo shares the same database. Run `docker compose up -d` again after switching branches to migrate to the new branch's head.
 
-To start over from an empty database, run `docker compose down -v`, then `docker compose up -d`.
+To start over from an empty database, run `docker compose down -v`, then `docker compose up -d && docker compose wait db-seed`.
 
 #### Loading a snapshot
 
 Snapshots are `pg_dump -F c` files of a real database. They hold real user data, so get them through the team's approved channel and keep them outside the repo. Point `SNAPSHOT` at the file's absolute path, wherever it is:
 
 ```
-SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose up -d
+SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker compose up -d && docker compose wait db-seed
 ```
 
 This replaces your local database with the snapshot, then migrates it to your branch's head. If the file is missing or isn't a dump, or the restore fails, your current database is left as it was. The file is never changed, so run it again any time to get back to the same data. The snapshot must come from a database at a revision that exists on `main`, and the local Postgres (17, matching production) must be at least as new as the server it was dumped from.
