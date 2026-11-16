@@ -32,7 +32,8 @@ services:
     volumes:
       - userapp-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "chtc-userapp"]
+      # TCP, not the default socket: on first start the image's temporary init server answers on the socket only
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "chtc-userapp"]
       interval: 2s
       retries: 30
 
