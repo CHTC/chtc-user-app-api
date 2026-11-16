@@ -14,7 +14,7 @@ test: check-python
 	-docker rm -f userapp-test-db >/dev/null 2>&1
 	docker run -d --name userapp-test-db \
 		-e POSTGRES_USER=$(DB_USER) -e POSTGRES_PASSWORD=$(DB_PASSWORD) -e POSTGRES_DB=$(DB_NAME) \
-		-p $(DB_PORT):5432 postgres:16 >/dev/null
+		-p $(DB_PORT):5432 postgres:17.12 >/dev/null
 	@echo "waiting for postgres on :$(DB_PORT)"
 	@until docker exec userapp-test-db pg_isready -U $(DB_USER) >/dev/null 2>&1; do sleep 1; done
 	@$(MAKE) test-run; status=$$?; docker rm -f userapp-test-db >/dev/null 2>&1 || true; exit $$status
