@@ -89,7 +89,9 @@ docker compose up -d && docker compose wait db-seed
 python -m userapp.main
 ```
 
-`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. `docker compose wait db-seed` fails if seeding failed, which `up -d` alone does not report. The API serves on port 1111. Every checkout and worktree of this repo shares the same database. Run `docker compose up -d` again after switching branches to migrate to the new branch's head.
+`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. `docker compose wait db-seed` fails if seeding failed, which `up -d` alone does not report. The API serves on port 1111. Every checkout and worktree of this repo shares the same database.
+
+After switching to a branch with new migrations, run the same command again to migrate to that branch's head. Switching back is different: if the database has a migration the checked-out branch doesn't have, `up` fails with `Can't locate revision`. Before switching away, undo the branch's migrations with `docker compose run --rm db-init alembic downgrade <revision>`, where `<revision>` is the head of the branch you are switching to. Otherwise, reload a snapshot or start over.
 
 To start over from an empty database, run `docker compose down -v`, then `docker compose up -d && docker compose wait db-seed`.
 
