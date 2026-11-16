@@ -104,3 +104,5 @@ SNAPSHOT=$HOME/Downloads/dump.dump docker compose run --rm db-restore && docker 
 ```
 
 This replaces your local database with the snapshot, then migrates it to your branch's head. If the file is missing or isn't a dump, or the restore fails, your current database is left as it was. The file is never changed, so run it again any time to get back to the same data. The snapshot must come from a database at a revision that exists on `main`, and the local Postgres (17, matching production) must be at least as new as the server it was dumped from.
+
+A snapshot has its own user 4, a real account, so the UI's dev login acts as that person. Admin access still works because it comes from the login token.
