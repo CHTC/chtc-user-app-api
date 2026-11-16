@@ -89,7 +89,7 @@ docker compose up -d
 python -m userapp.main
 ```
 
-`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. The API serves on port 1111. Run `docker compose up -d` again after switching branches to migrate to the new branch's head.
+`docker compose up -d` starts Postgres on `localhost:5434`, migrates it to the checked-out branch's head and seeds admin user 4, the user the UI's dev login token points at. The API serves on port 1111. Every checkout and worktree of this repo shares the same database. Run `docker compose up -d` again after switching branches to migrate to the new branch's head.
 
 To start over from an empty database, run `docker compose down -v`, then `docker compose up -d`.
 

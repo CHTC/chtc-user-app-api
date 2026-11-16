@@ -7,6 +7,9 @@
 #
 # Run the API on the host with `cp example.env .env` and `python -m userapp.main`; it connects to localhost:5434.
 
+# One project name for every checkout and worktree, so they all share one DB instead of competing for port 5434
+name: chtc-userapp-dev
+
 x-postgres-image: &postgres-image postgres:17.12
 
 x-db-credentials: &db-credentials
