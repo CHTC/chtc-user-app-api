@@ -5,9 +5,9 @@
 #                                                                replace the DB with that snapshot file, then migrate and seed
 #   docker compose down -v                                       delete the DB (next `up` starts empty again)
 #
-# Run the API on the host with `cp example.env .env` and `python -m userapp.main`; it connects to localhost:5434.
+# Run the API on the host with `cp example.env .env` and `python -m userapp.main`; it connects to localhost:5432.
 
-# One project name for every checkout and worktree, so they all share one DB instead of competing for port 5434
+# One project name for every checkout and worktree, so they all share one DB instead of competing for port 5432
 name: chtc-userapp-dev
 
 x-postgres-image: &postgres-image postgres:17.12
@@ -27,8 +27,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: chtc-userapp
     ports:
-      # 5432 is left free for a port-forward to a shared DB; `make test` uses 5433
-      - "127.0.0.1:5434:5432"
+      # Conflicts with anything else on 5432, such as a port-forward to a shared DB; `make test` uses 5433
+      - "127.0.0.1:5432:5432"
     volumes:
       - userapp-db:/var/lib/postgresql/data
     healthcheck:
