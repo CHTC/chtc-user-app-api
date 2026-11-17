@@ -77,7 +77,17 @@ def stub_builders(monkeypatch):
     monkeypatch.setattr(job_history, "build_user_range_summary", fake_user_range_summary)
     # Otherwise the first test's answer would be served to every later one.
     monkeypatch.setattr(_util, "CACHE_SECONDS", 0)
+    # Fixture users are on randomly named submit nodes, not ap2001, so the AP
+    # gate is passed here and exercised on its own in TestJobsSupportedAp.
+    monkeypatch.setattr(_util, "check_on_supported_ap", _no_ap_gate)
     return calls
+
+
+_real_ap_gate = _util.check_on_supported_ap
+
+
+async def _no_ap_gate(session, user_id, netid):
+    return None
 
 
 class TestJobsAuthentication:
@@ -150,6 +160,42 @@ class TestJobsOwnerScope:
         response = existing_admin_client.get("/jobs/series")
 
         assert response.status_code == 409
+
+
+class TestJobsSupportedAp:
+    """Only ap2001's history is reachable, so anyone else is told so rather than
+    shown an empty calendar."""
+
+    @pytest.fixture(autouse=True)
+    def real_gate(self, monkeypatch):
+        monkeypatch.setattr(_util, "check_on_supported_ap", _real_ap_gate)
+
+    @pytest.mark.parametrize("endpoint", ["/jobs/series", "/jobs/day-summary"])
+    def test_a_user_not_on_the_supported_ap_is_refused_with_a_message(
+        self, existing_admin_client, user, stub_builders, endpoint
+    ):
+        response = existing_admin_client.get(endpoint, params={"owner": user["netid"]})
+
+        assert response.status_code == 409, response.text
+        detail = response.json()["detail"]
+        assert "only available for ap2001" in detail
+        assert user["netid"] in detail
+        assert user["submit_nodes"][0]["name"] in detail
+        assert stub_builders == [], "no query should be made for a refused owner"
+
+    def test_a_user_on_the_supported_ap_is_let_through(self, monkeypatch, existing_admin_client, user, stub_builders):
+        # The fixture's node stands in for ap2001; its FQDN form must match too.
+        node = user["submit_nodes"][0]["name"]
+        monkeypatch.setattr(_util, "SUPPORTED_AP", node.lower())
+
+        response = existing_admin_client.get("/jobs/series", params={"owner": user["netid"]})
+
+        assert response.status_code == 200, response.text
+        assert stub_builders[0]["owner"] == user["netid"]
+
+    @pytest.mark.parametrize("name", ["ap2001", "ap2001.chtc.wisc.edu", "AP2001.chtc.wisc.edu "])
+    def test_short_and_full_hostnames_name_the_same_node(self, name):
+        assert _util._short_host(name) == "ap2001"
 
 
 class TestJobsParameters:

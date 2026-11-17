@@ -90,6 +90,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from userapp.core.models.tables import User
+from userapp.core.models.views import UserSubmitView
 
 logger = logging.getLogger(__name__)
 
@@ -757,13 +758,52 @@ def build_batch_list(members: dict[str, dict]) -> list[dict]:
 # --- Owner resolution ---------------------------------------------------------
 
 
+def _short_host(name: Optional[str]) -> str:
+    """"ap2001.chtc.wisc.edu" and "ap2001" are the same node; submit_nodes holds both forms."""
+    return (name or "").strip().lower().split(".")[0]
+
+
+# The access point whose jobs these endpoints can see: the one htcondordb is
+# pointed at. Until the other APs' databases are reachable, a user who does not
+# submit there is refused with a message rather than shown an empty calendar
+# that looks like they never ran anything.
+SUPPORTED_AP = _short_host(HTCONDORDB_SCHEDD)
+
+
+async def check_on_supported_ap(session, user_id: int, netid: str) -> None:
+    """Refuse a user who has no access to the AP the job history is read from.
+
+    Access is what /users/{id}/submit_nodes reports (group membership), so a user
+    on ap2001 and another AP passes, and sees their ap2001 jobs only.
+    """
+    rows = await session.execute(select(UserSubmitView.name).where(UserSubmitView.user_id == user_id))
+    nodes = sorted({name for name in rows.scalars() if name})
+    if any(_short_host(name) == SUPPORTED_AP for name in nodes):
+        return
+    where = f"Their access points are: {', '.join(nodes)}." if nodes else "They have no access points on record."
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"Job history is only available for {SUPPORTED_AP} for now, "
+            f"and {netid} is not a {SUPPORTED_AP} user. {where}"
+        ),
+    )
+
+
 async def resolve_owner(session, requested: Optional[str], user_token, admin: bool) -> tuple[str, int]:
     """The netid whose jobs are being asked about, and that user's id.
 
     A user may only ask about themselves; an admin may name anyone. The netid is
     what HTCondor records as Owner, which is why it is the join between this
-    application's users and the pool's jobs.
+    application's users and the pool's jobs. Either way the owner must be on
+    SUPPORTED_AP (see check_on_supported_ap).
     """
+    netid, user_id = await _resolve_owner(session, requested, user_token, admin)
+    await check_on_supported_ap(session, user_id, netid)
+    return netid, user_id
+
+
+async def _resolve_owner(session, requested: Optional[str], user_token, admin: bool) -> tuple[str, int]:
     if requested is None:
         if user_token is None:
             raise HTTPException(
