@@ -900,6 +900,39 @@ class TestHistoryFolding:
         assert "None" not in day["owners"]
         assert day["dropped"] == 30, "the merged row marks the range truncated"
 
+    def test_grouped_owners_arrive_quoted_and_are_shown_bare(self, monkeypatch):
+        # htcondordb returns a string GROUP BY key as a ClassAd literal, so this
+        # is what a real row looks like, and the table showed it quotes and all.
+        main = [('"alice"', 12, 1, 2, 3, 4, 3600, 50, 40, 5, 2048 * 1024, 10, 8)]
+        self._fake_db(monkeypatch, self._user_day_answer(main, [('"alice"', 4096)], [('"alice"', 20)]))
+
+        day = asyncio.run(_util.fetch_user_day(date(2026, 8, 28)))
+
+        assert list(day["owners"]) == ["alice"]
+        assert day["owners"]["alice"]["memoryRequested"] == 4096, "request rows must match the bare owner too"
+        assert day["owners"]["alice"]["diskRequested"] == 20
+
+    def test_a_grouped_batch_name_matches_the_live_queues_spelling(self):
+        # History's grouped names are quoted; the live queue's plain column is
+        # not. Both must land on one name or a cluster splits in two.
+        tally = {}
+        _util.note_batch(tally, 7, "sweep", 3)  # from the live queue
+        asyncio.run(_util.tally_history_batches(tally, "alice", [(7, '"sweep"', 5)], {7}))
+
+        assert tally == {7: {"sweep": 8}}
+
+    @pytest.mark.parametrize("raw, bare", [
+        ('"alice"', "alice"),
+        ("alice", "alice"),
+        ('"say \\"hi\\""', 'say "hi"'),
+        ('"C:\\\\runs"', "C:\\runs"),
+        ('""', ""),
+        (None, None),
+        (12, 12),
+    ])
+    def test_group_key_unquotes_only_classad_string_literals(self, raw, bare):
+        assert _util.group_key(raw) == bare
+
     def test_a_request_that_could_not_be_summed_leaves_out_that_resource_only(self, monkeypatch):
         main = [("alice", 12, 0, 0, 0, 0, 3600, 50, 40, 5, 2048 * 1024, 10, 8)]
         # alice's RequestMemory sum met an expression and was merged away.

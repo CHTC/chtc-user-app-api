@@ -76,6 +76,7 @@ times, pays for the slow path once.
 import asyncio
 import logging
 import os
+import re
 from array import array
 from bisect import bisect_right
 from calendar import monthrange
@@ -576,7 +577,7 @@ async def tally_history_batches(
     asked for again.
     """
     for cluster_id, name, count in window_rows:
-        note_batch(tally, cluster_id, name, count)
+        note_batch(tally, cluster_id, group_key(name), count)
 
     missing = {cluster for cluster in clusters if cluster not in tally}
     if not missing:
@@ -589,7 +590,7 @@ async def tally_history_batches(
     )
     for cluster_id, name, count in rows:
         if _as_int(cluster_id) in missing:
-            note_batch(tally, cluster_id, name, count)
+            note_batch(tally, cluster_id, group_key(name), count)
 
 
 # --- Live queue ---------------------------------------------------------------
@@ -909,6 +910,25 @@ async def cached_day(key: tuple, ttl: float, build: Callable[[], Awaitable[Any]]
 
 
 # --- Series payload -----------------------------------------------------------
+
+
+def group_key(value: Any) -> Any:
+    """A GROUP BY key as plain text.
+
+    htcondordb hands back string group keys as ClassAd literals -- the netid
+    alice arrives as '"alice"', quotes and all -- while the same attribute in a
+    plain SELECT list arrives as 'alice'. Numbers and undefined (None) come back
+    as themselves. So every string key read from a grouped query goes through
+    here before it is shown or compared with the live queue's values.
+    """
+    if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] == '"':
+        return _CLASSAD_ESCAPE.sub(r"\1", value[1:-1])
+    return value
+
+
+# Inside a ClassAd string literal a backslash escapes the next character; the
+# two that matter for names are \" and \\.
+_CLASSAD_ESCAPE = re.compile(r'\\(["\\])')
 
 
 def _as_seconds(value: Any) -> Optional[float]:
@@ -1775,10 +1795,10 @@ async def fetch_user_day(day: date) -> dict:
         for name, value in zip(_USER_DAY_FIELDS, values):
             totals[name] = _as_seconds(value) or 0
         totals["memoryUsed"] /= KIB_PER_MB
-        owners[str(owner)] = totals
+        owners[str(group_key(owner))] = totals
 
     for (requested, (used, _)), result in zip(_USER_DAY_REQUESTS.items(), request_rows):
-        sums = {str(owner): _as_seconds(total) or 0 for owner, total in result if owner is not None}
+        sums = {str(group_key(owner)): _as_seconds(total) or 0 for owner, total in result if owner is not None}
         unknown = []
         for owner, totals in owners.items():
             if owner in sums:
